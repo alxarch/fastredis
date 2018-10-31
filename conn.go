@@ -15,7 +15,6 @@ type Conn struct {
 	lastUsedAt time.Time
 	createdAt  time.Time
 	options    *ConnOptions
-	scripts    map[string]struct{}
 }
 
 type ConnOptions struct {
