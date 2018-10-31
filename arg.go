@@ -11,6 +11,7 @@ const (
 	typKey
 	typString
 	typBuffer
+	typScript
 	typInt
 	typUint
 	typFloat
@@ -72,3 +73,11 @@ func Bool(b bool) Arg {
 	}
 	return Arg{typ: typFalse}
 }
+
+// func Keys(keys ...string) []Arg {
+// 	args := make([]Arg, len(keys))
+// 	for i, k := range keys {
+// 		args[i] = Key(k)
+// 	}
+// 	return args
+// }

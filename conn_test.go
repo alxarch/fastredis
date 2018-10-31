@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alxarch/go-meter/redis/repl"
+	"github.com/alxarch/fastredis/repl"
 )
 
 func TestConn(t *testing.T) {
@@ -13,8 +13,8 @@ func TestConn(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	p := Get()
-	defer Put(p)
+	p := BlankPipeline()
+	defer p.Close()
 	r := BlankReply()
 	defer r.Close()
 	p.Select(1)
@@ -54,19 +54,19 @@ func Test_Pool(t *testing.T) {
 		t.Errorf("Unexpected error: %s", err)
 	}
 	defer pool.Put(conn)
-	p := Get()
+	p := BlankPipeline()
+	defer p.Close()
 	p.HSet("foo", "bar", String("baz"))
-	defer Put(p)
 	conn.Do(p, nil)
 
 }
 
 func BenchmarkPipeline(b *testing.B) {
 	b.ReportAllocs()
-	p := Get()
+	p := BlankPipeline()
+	defer p.Close()
 	for i := 0; i < b.N; i++ {
 		p.Reset()
 		p.HIncrBy("foo", "bar", 1)
 	}
-	Put(p)
 }

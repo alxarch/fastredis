@@ -18,7 +18,7 @@ type Pipeline struct {
 
 var pipelinePool sync.Pool
 
-func Get() *Pipeline {
+func BlankPipeline() *Pipeline {
 	x := pipelinePool.Get()
 	if x == nil {
 		return new(Pipeline)
@@ -26,7 +26,7 @@ func Get() *Pipeline {
 	return x.(*Pipeline)
 }
 
-func Put(p *Pipeline) {
+func (p *Pipeline) Close() {
 	if p != nil {
 		p.Reset()
 		pipelinePool.Put(p)
@@ -60,6 +60,7 @@ func (p *Pipeline) cmd(cmd string, args ...Arg) {
 	}
 	p.n++
 }
+
 func (p *Pipeline) appendArg(a Arg) {
 	switch a.typ {
 	case typString, typKey:
@@ -217,4 +218,34 @@ func (p *Pipeline) ZScan(key string, cur int64, match string, count int64) {
 	} else {
 		p.cmd("ZSCAN", String(key), Int(cur), String("MATCH"), String(match), String("COUNT"), Int(count))
 	}
+}
+
+func (p *Pipeline) Eval(script string, keysAndArgs ...Arg) {
+	p.appendArr(len(keysAndArgs) + 3)
+	p.appendArg(String("EVAL"))
+	p.appendArg(String(script))
+	p.appendEval(keysAndArgs)
+}
+
+func (p *Pipeline) EvalSHA(s *Script, keysAndArgs ...Arg) {
+	p.appendArr(len(keysAndArgs) + 3)
+	p.appendArg(String("EVALSHA"))
+	p.appendArg(Raw(s.sha1[:]))
+	p.appendEval(keysAndArgs)
+}
+
+func (p *Pipeline) appendEval(keysAndArgs []Arg) {
+	keys := keysAndArgs
+	for i := range keys {
+		if keys[i].typ != typKey {
+			keys = keys[:i]
+			break
+		}
+	}
+	p.appendArg(Int(int64(len(keys))))
+	for _, a := range keysAndArgs {
+		p.appendArg(a)
+	}
+	p.n++
+
 }

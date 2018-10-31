@@ -361,12 +361,23 @@ func (s *ScanIterator) Err() error {
 	return s.err
 }
 
+var ErrIteraratorClosed = errors.New("Iterator closed")
+
+func (s *ScanIterator) Close() {
+	s.val.Reply().Close()
+	s.val = NullValue()
+	if s.err == nil {
+		s.err = ErrIteraratorClosed
+	}
+}
+
 func (s *ScanIterator) Next(conn *Conn) Value {
 	if s.err != nil {
 		return NullValue()
 	}
 	reply := s.val.Reply()
 	if reply == nil {
+		// Iterator closed
 		if s.val.IsNull() {
 			return s.val
 		}
@@ -379,7 +390,7 @@ func (s *ScanIterator) Next(conn *Conn) Value {
 		reply.Reset()
 	}
 
-	p := Get()
+	p := BlankPipeline()
 	switch s.cmd {
 	case "HSCAN":
 		p.HScan(s.key, s.cur, s.match, s.count)
@@ -391,13 +402,13 @@ func (s *ScanIterator) Next(conn *Conn) Value {
 		p.Scan(s.cur, s.match, s.count)
 	}
 	s.err = conn.Do(p, reply)
-	Put(p)
+	p.Close()
 	if s.err != nil {
 		s.val = NullValue()
 		reply.Close()
 		return s.val
 	}
-	v := reply.Value()
+	v := reply.Value().Get(0)
 	s.err = v.Err()
 	if s.err != nil {
 		s.val = NullValue()
