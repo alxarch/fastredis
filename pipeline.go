@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alxarch/go-meter/redis/repl"
+	"github.com/alxarch/fastredis/repl"
 )
 
 // Pipeline is a command buffer.

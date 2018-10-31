@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/alxarch/go-meter/redis/repl"
+	"github.com/alxarch/fastredis/repl"
 )
 
 // Reply is a reply for a redis command.
@@ -335,7 +335,15 @@ type ScanIterator struct {
 	count int64
 }
 
-func HSCAN(key, match string, count int64) *ScanIterator {
+func Scan(match string, count int64) *ScanIterator {
+	s := ScanIterator{
+		cmd:   "SCAN",
+		match: match,
+		count: count,
+	}
+	return &s
+}
+func HScan(key, match string, count int64) *ScanIterator {
 	s := ScanIterator{
 		cmd:   "HSCAN",
 		key:   key,

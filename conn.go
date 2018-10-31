@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/alxarch/go-meter/redis/repl"
+	"github.com/alxarch/fastredis/repl"
 )
 
 type Conn struct {
