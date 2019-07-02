@@ -1,11 +1,9 @@
-package redis
+package resp
 
 import (
 	"bufio"
 	"errors"
 	"sync"
-
-	"github.com/alxarch/fastredis/resp"
 )
 
 // Reply is a reply for a redis command.
@@ -42,10 +40,8 @@ func BlankReply() *Reply {
 
 // Close resets and returns a Reply to the pool.
 func (reply *Reply) Close() {
-	if reply != nil {
-		reply.Reset()
-		replyPool.Put(reply)
-	}
+	reply.Reset()
+	replyPool.Put(reply)
 }
 
 // Reset resets a reply invalidating any Value pointing to it.
@@ -54,10 +50,15 @@ func (reply *Reply) Reset() {
 	reply.buffer = reply.buffer[:0]
 }
 
+// Null returns a Null value
+func Null() Value {
+	return Value{-1, nil}
+}
+
 // Value returns the root Value of a reply or a NullValue
 func (reply *Reply) Value() Value {
 	if reply.n == 0 {
-		return NullValue()
+		return Null()
 	}
 	return Value{id: 0, reply: reply}
 }
@@ -92,15 +93,15 @@ func (v Value) get() *value {
 
 // Get returns the i-th element of an array reply.
 func (v Value) Get(i int) Value {
-	if vv := v.get(); vv != nil && vv.typ == resp.Array && 0 <= i && i < len(vv.arr) {
+	if vv := v.get(); vv != nil && vv.typ == Array && 0 <= i && i < len(vv.arr) {
 		return Value{id: vv.arr[i], reply: v.reply}
 	}
-	return NullValue()
+	return Null()
 }
 
 // Bytes returns the slice of bytes for a value.
 func (v Value) Bytes() []byte {
-	if vv := v.get(); vv != nil && (vv.typ == resp.SimpleString || vv.typ == resp.BulkString) {
+	if vv := v.get(); vv != nil && (vv.typ == SimpleString || vv.typ == BulkString) {
 		return vv.slice(v.reply.buffer)
 	}
 	return nil
@@ -108,7 +109,7 @@ func (v Value) Bytes() []byte {
 
 // Err returns an error if the value is an error value.
 func (v Value) Err() error {
-	if vv := v.get(); vv != nil && vv.typ == resp.Error {
+	if vv := v.get(); vv != nil && vv.typ == Error {
 		return errors.New(string(vv.slice(v.reply.buffer)))
 	}
 	return nil
@@ -133,9 +134,9 @@ func (v Value) Type() byte {
 func (v Value) Int() (int64, bool) {
 	if vv := v.get(); vv != nil {
 		switch vv.typ {
-		case resp.Integer:
+		case Integer:
 			return vv.num, true
-		case resp.SimpleString, resp.BulkString:
+		case SimpleString, BulkString:
 			return btoi(vv.slice(v.reply.buffer))
 		}
 	}
@@ -145,7 +146,7 @@ func (v Value) Int() (int64, bool) {
 // IsNull checks if a value is the NullValue.
 func (v Value) IsNull() bool {
 	if vv := v.get(); vv != nil {
-		return vv.num == -1 && (vv.typ == resp.BulkString || vv.typ == resp.Array)
+		return vv.num == -1 && (vv.typ == BulkString || vv.typ == Array)
 	}
 	return v.id == -1
 }
@@ -192,11 +193,11 @@ func (reply *Reply) ReadFromN(r *bufio.Reader, n int64) (Value, error) {
 
 func (reply *Reply) readArray(r *bufio.Reader, n int64) error {
 	if n < -1 {
-		return resp.ProtocolError
+		return ProtocolError
 	}
 	id := reply.n
 	v := reply.value()
-	v.typ = resp.Array
+	v.typ = Array
 	v.num = n
 	v.start = -1
 	v.end = -1
@@ -229,9 +230,9 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		return err
 	}
 	switch typ {
-	case resp.Error, resp.SimpleString:
+	case Error, SimpleString:
 		start := len(reply.buffer)
-		reply.buffer, err = resp.ReadLine(reply.buffer, r)
+		reply.buffer, err = ReadLine(reply.buffer, r)
 		if err != nil {
 			return err
 		}
@@ -242,9 +243,9 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		v.start = start
 		v.end = len(reply.buffer)
 		return nil
-	case resp.Integer:
+	case Integer:
 		var n int64
-		n, err = resp.ReadInt(r)
+		n, err = ReadInt(r)
 		if err != nil {
 			return err
 		}
@@ -254,14 +255,14 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		v.start = -1
 		v.num = n
 		return nil
-	case resp.BulkString:
+	case BulkString:
 		var n int64
-		n, err = resp.ReadInt(r)
+		n, err = ReadInt(r)
 		if err != nil {
 			return err
 		}
 		start := len(reply.buffer)
-		reply.buffer, err = resp.ReadBulkString(reply.buffer, n, r)
+		reply.buffer, err = ReadBulkString(reply.buffer, n, r)
 		if err != nil {
 			return err
 		}
@@ -272,15 +273,15 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		v.arr = v.arr[:0]
 		v.end = len(reply.buffer)
 		return nil
-	case resp.Array:
+	case Array:
 		var n int64
-		n, err = resp.ReadInt(r)
+		n, err = ReadInt(r)
 		if err != nil {
 			return err
 		}
 		return reply.readArray(r, n)
 	default:
-		return resp.ProtocolError
+		return ProtocolError
 	}
 }
 
@@ -289,136 +290,4 @@ func (reply *Reply) get(id int) *value {
 		return &reply.values[id]
 	}
 	return nil
-}
-
-// ForEach iterates each value in a BulkStringArray reply
-func (v Value) ForEach(fn func(v Value)) {
-	if fn == nil {
-		return
-	}
-	if vv := v.reply.get(v.id); vv != nil || vv.typ == resp.Array {
-		for _, id := range vv.arr {
-			fn(Value{id: id, reply: v.reply})
-		}
-	}
-}
-
-// ForEachKV iterates each key value pair in a BulkStringArray reply
-func (v Value) ForEachKV(fn func(k []byte, v Value)) {
-	if fn == nil {
-		return
-	}
-	if vv := v.reply.get(v.id); vv != nil && vv.typ == resp.Array {
-		var k *value
-		for i, id := range vv.arr {
-			if i%2 == 0 {
-				k = v.reply.get(id)
-			} else if k != nil {
-				fn(k.slice(v.reply.buffer), Value{id: id, reply: v.reply})
-				k = nil
-			}
-		}
-		if k != nil {
-			fn(k.slice(v.reply.buffer), NullValue())
-		}
-	}
-
-}
-
-type ScanIterator struct {
-	cmd   string
-	match string
-	key   string
-	cur   int64
-	val   Value
-	err   error
-	count int64
-}
-
-func Scan(match string, count int64) *ScanIterator {
-	s := ScanIterator{
-		cmd:   "SCAN",
-		match: match,
-		count: count,
-	}
-	return &s
-}
-func HScan(key, match string, count int64) *ScanIterator {
-	s := ScanIterator{
-		cmd:   "HSCAN",
-		key:   key,
-		match: match,
-		count: count,
-	}
-	return &s
-}
-
-func NullValue() Value {
-	return Value{-1, nil}
-}
-
-func (s *ScanIterator) Err() error {
-	return s.err
-}
-
-var ErrIteraratorClosed = errors.New("Iterator closed")
-
-func (s *ScanIterator) Close() {
-	s.val.Reply().Close()
-	s.val = NullValue()
-	if s.err == nil {
-		s.err = ErrIteraratorClosed
-	}
-}
-
-func (s *ScanIterator) Next(conn *Conn) Value {
-	if s.err != nil {
-		return NullValue()
-	}
-	reply := s.val.Reply()
-	if reply == nil {
-		// Iterator closed
-		if s.val.IsNull() {
-			return s.val
-		}
-		reply = BlankReply()
-	} else if s.cur == 0 {
-		reply.Close()
-		s.val = NullValue()
-		return s.val
-	} else {
-		reply.Reset()
-	}
-
-	p := BlankPipeline()
-	switch s.cmd {
-	case "HSCAN":
-		p.HScan(s.key, s.cur, s.match, s.count)
-	case "ZSCAN":
-		p.ZScan(s.key, s.cur, s.match, s.count)
-	case "SSCAN":
-		p.SScan(s.key, s.cur, s.match, s.count)
-	default:
-		p.Scan(s.cur, s.match, s.count)
-	}
-	s.err = conn.Do(p, reply)
-	p.Close()
-	if s.err != nil {
-		s.val = NullValue()
-		reply.Close()
-		return s.val
-	}
-	v := reply.Value().Get(0)
-	s.err = v.Err()
-	if s.err != nil {
-		s.val = NullValue()
-		reply.Close()
-		return s.val
-	}
-	s.cur, _ = v.Get(0).Int()
-	s.val = v.Get(1)
-	if s.val.Len() > 0 {
-		return s.val
-	}
-	return s.Next(conn)
 }

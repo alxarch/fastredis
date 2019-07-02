@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alxarch/fastredis/repl"
+	"github.com/alxarch/fastredis/resp"
 )
 
 // Pipeline is a command buffer.
@@ -43,17 +43,17 @@ func (p *Pipeline) Len() int64 {
 	return p.n
 }
 
-// Resets resets the pipeline buffer.
+// Reset resets the pipeline buffer.
 func (p *Pipeline) Reset() {
 	p.buf = p.buf[:0]
 	p.n = 0
 }
 
 func (p *Pipeline) appendArr(n int) {
-	p.buf = repl.AppendArray(p.buf, n)
+	p.buf = resp.AppendArray(p.buf, n)
 }
 func (p *Pipeline) cmd(cmd string, args ...Arg) {
-	p.buf = repl.AppendArray(p.buf, len(args)+1)
+	p.buf = resp.AppendArray(p.buf, len(args)+1)
 	p.appendArg(String(cmd))
 	for _, a := range args {
 		p.appendArg(a)
@@ -64,24 +64,24 @@ func (p *Pipeline) cmd(cmd string, args ...Arg) {
 func (p *Pipeline) appendArg(a Arg) {
 	switch a.typ {
 	case typString, typKey:
-		p.buf = repl.AppendBulkString(p.buf, a.str)
+		p.buf = resp.AppendBulkString(p.buf, a.str)
 	case typBuffer:
-		p.buf = repl.AppendBulkStringRaw(p.buf, a.buf)
+		p.buf = resp.AppendBulkStringRaw(p.buf, a.buf)
 	case typInt:
 		p.scratch = strconv.AppendInt(p.scratch[:0], int64(a.num), 10)
-		p.buf = repl.AppendBulkStringRaw(p.buf, p.scratch)
+		p.buf = resp.AppendBulkStringRaw(p.buf, p.scratch)
 	case typFloat:
 		p.scratch = strconv.AppendFloat(p.scratch, math.Float64frombits(a.num), 'f', -1, 64)
-		p.buf = repl.AppendBulkStringRaw(p.buf, p.scratch)
+		p.buf = resp.AppendBulkStringRaw(p.buf, p.scratch)
 	case typUint:
 		p.scratch = strconv.AppendUint(p.scratch, a.num, 10)
-		p.buf = repl.AppendBulkStringRaw(p.buf, p.scratch)
+		p.buf = resp.AppendBulkStringRaw(p.buf, p.scratch)
 	case typTrue:
-		p.buf = repl.AppendBulkString(p.buf, "true")
+		p.buf = resp.AppendBulkString(p.buf, "true")
 	case typFalse:
-		p.buf = repl.AppendBulkString(p.buf, "false")
+		p.buf = resp.AppendBulkString(p.buf, "false")
 	default:
-		p.buf = repl.AppendNullBulkString(p.buf)
+		p.buf = resp.AppendNullBulkString(p.buf)
 	}
 }
 

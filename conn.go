@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/alxarch/fastredis/repl"
+	"github.com/alxarch/fastredis/resp"
 )
 
 type Conn struct {
@@ -40,14 +40,6 @@ func (options *ConnOptions) Addr() net.Addr {
 	return options.Address
 }
 
-func Address(addr net.Addr) net.Addr {
-	if addr != nil {
-		return addr
-	}
-	return &net.TCPAddr{
-		Port: DefaultPort,
-	}
-}
 func Dial(options *ConnOptions) (*Conn, error) {
 	if options == nil {
 		options = new(ConnOptions)
@@ -114,7 +106,7 @@ func (c *Conn) Do(p *Pipeline, r *Reply) (err error) {
 	if err == nil {
 		if r == nil {
 			if !c.options.WriteOnly {
-				err = repl.Discard(c.r)
+				err = resp.Discard(c.r)
 			}
 		} else if c.options.WriteOnly {
 			return errConnWriteOnly
@@ -184,88 +176,3 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 	}
 	return
 }
-
-// type AsyncReply struct {
-// 	Reply
-// 	size int64
-// 	err  error
-// 	done chan struct{}
-// }
-
-// type AsyncConn struct {
-// 	conn       net.Conn
-// 	r          *bufio.Reader
-// 	mu         sync.Mutex
-// 	replies    chan *AsyncReply
-// 	closeCh    chan struct{}
-// 	closed     uint32
-// 	err        error
-// 	lastUsedAt time.Time
-// 	createdAt  time.Time
-// }
-
-// var asyncConnPool sync.Pool
-
-// func (c *AsyncConn) Close() error {
-// 	if atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
-// 		c.closeCh <- struct{}{}
-// 		return nil
-// 	}
-// 	return errConnClosed
-// }
-
-// func (c *AsyncConn) Do(p *Pipeline, r *AsyncReply) error {
-// 	r.size = int64(p.n)
-// 	c.replies <- r
-// 	_, err := c.conn.Write(p.buf)
-// 	if err != nil {
-// 		c.Close()
-// 		return err
-// 	}
-// 	<-r.done
-// 	return nil
-
-// }
-// func NewAsyncConn(conn net.Conn) (c *AsyncConn) {
-// 	x := asyncConnPool.Get()
-// 	if x == nil {
-// 		c = new(AsyncConn)
-// 		c.r = bufio.NewReader(conn)
-// 		c.replies = make(chan *AsyncReply)
-// 		c.closeCh = make(chan struct{}, 1)
-// 	} else {
-// 		c.r.Reset(conn)
-// 	}
-// 	now := time.Now()
-// 	c.conn = conn
-// 	c.createdAt = now
-// 	c.lastUsedAt = now
-// 	go func() {
-// 		for {
-// 			select {
-// 			case <-c.closeCh:
-// 				c.conn.Close()
-// 				c.conn = nil
-// 				c.r.Reset(nil)
-// 				return
-// 			case r := <-c.replies:
-// 				_, r.err = r.ReadFromN(c.r, r.size)
-// 				if r.err != nil {
-// 					c.err = r.err
-// 					c.closeCh <- struct{}{}
-// 					continue
-// 				}
-// 				r.done <- struct{}{}
-// 			}
-// 		}
-// 	}()
-// 	return
-
-// }
-
-// func (c *Conn) maxRetries() int {
-// 	if c.options.MaxRetries > 0 {
-// 		return c.options.MaxRetries
-// 	}
-// 	return 1
-// }

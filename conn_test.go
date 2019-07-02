@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alxarch/fastredis/repl"
+	"github.com/alxarch/fastredis/resp"
 )
 
 func TestConn(t *testing.T) {
@@ -17,7 +17,7 @@ func TestConn(t *testing.T) {
 	defer p.Close()
 	r := BlankReply()
 	defer r.Close()
-	p.Select(1)
+	p.Select(10)
 	p.Set("foo", String("bar"), 0)
 	p.Keys("*")
 	p.FlushDB()
@@ -29,7 +29,7 @@ func TestConn(t *testing.T) {
 	if v.Len() != 4 {
 		t.Errorf("Invalid reply length: %d", v.Len())
 	}
-	if v.Type() != repl.Array {
+	if v.Type() != resp.Array {
 		t.Errorf("Invalid reply type: %d", v.Type())
 	}
 	if ok := v.Get(0); string(ok.Bytes()) != "OK" {
