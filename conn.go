@@ -107,7 +107,9 @@ func (c *Conn) Do(p *Pipeline, r *resp.Reply) (err error) {
 	if err == nil {
 		if r == nil {
 			if !c.options.WriteOnly {
-				err = resp.Discard(c.r)
+				for ; n > 0 && err == nil; n-- {
+					err = resp.Discard(c.r)
+				}
 			}
 		} else if c.options.WriteOnly {
 			return errConnWriteOnly
