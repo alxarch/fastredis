@@ -23,6 +23,7 @@ type ConnOptions struct {
 	ReadTimeout    time.Duration
 	WriteTimeout   time.Duration
 	WriteOnly      bool
+	// SelectDB       int
 	// MaxRetries     int
 	// RetryBackoff   time.Duration
 }

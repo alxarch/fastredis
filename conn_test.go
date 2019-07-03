@@ -2,7 +2,6 @@ package redis
 
 import (
 	"testing"
-	"time"
 
 	"github.com/alxarch/fastredis/resp"
 )
@@ -45,20 +44,6 @@ func TestConn(t *testing.T) {
 	if ok := v.Get(3); string(ok.Bytes()) != "OK" {
 		t.Errorf("Invalid flushdb reply: %s", ok.Bytes())
 	}
-}
-
-func Test_Pool(t *testing.T) {
-	pool := NewPool(&PoolOptions{})
-	conn, err := pool.Get(time.Time{})
-	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
-	}
-	defer pool.Put(conn)
-	p := BlankPipeline()
-	defer p.Close()
-	p.HSet("foo", "bar", String("baz"))
-	conn.Do(p, nil)
-
 }
 
 func BenchmarkPipeline(b *testing.B) {

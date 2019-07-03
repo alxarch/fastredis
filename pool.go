@@ -20,6 +20,22 @@ type PoolOptions struct {
 	Dial              func(network, address string) (net.Conn, error)
 }
 
+func DefaultPoolOptions() PoolOptions {
+	return PoolOptions{
+		ConnOptions: ConnOptions{
+			ReadBufferSize: 8192,
+			ReadTimeout:    5 * time.Second,
+			WriteTimeout:   5 * time.Second,
+		},
+		MaxConnections:    8,
+		MaxIdleTime:       time.Minute,
+		MaxConnectionAge:  10 * time.Minute,
+		ClockFrequency:    100 * time.Millisecond,
+		CheckIdleInterval: 10 * time.Second,
+		Dial:              net.Dial,
+	}
+}
+
 type PoolStats struct {
 	Hits     uint32
 	Misses   uint32
