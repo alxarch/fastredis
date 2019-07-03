@@ -1,17 +1,44 @@
 package redis
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/alxarch/fastredis/resp"
+)
 
 func Test_Scan(t *testing.T) {
-	it := Scan("foo*", 5)
-
+	now := time.Now()
+	p := new(Pipeline)
+	key := fmt.Sprintf("scantest:%d", now.UnixNano())
+	p.HSet(key, "foo", resp.String("bar"))
+	p.HSet(key, "bar", resp.String("baz"))
 	conn, err := Dial(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := it.Next(conn)
-	if v.IsNull() {
-		t.Errorf("Null reply")
+	defer conn.Close()
+	if err := conn.Do(p, nil); err != nil {
+		t.Fatal(err)
+	}
+	iter := HScan(key, "", 0)
+	values := make(map[string]string)
+	scan := func(v resp.Value, k []byte) error {
+		values[string(k)] = string(v.Bytes())
+		return nil
+	}
+	if err := iter.Each(conn, scan); err != nil {
+		t.Fatalf("Scan error %s", err)
+	}
+	if len(values) != 2 {
+		t.Errorf("Invalid scan %v", values)
+	}
+	if values["foo"] != "bar" {
+		t.Errorf("Invalid scan %v", values)
+	}
+	if values["bar"] != "baz" {
+		t.Errorf("Invalid scan %v", values)
 	}
 
 }

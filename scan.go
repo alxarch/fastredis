@@ -8,6 +8,8 @@ type ScanIterator struct {
 	key   string
 	cur   int64
 	val   resp.Value
+	n     int
+	i     int
 	err   error
 	count int64
 }
@@ -54,7 +56,7 @@ func (s *ScanIterator) Each(conn *Conn, scan func(v resp.Value, k []byte) error)
 		var k []byte
 		for i, v := 0, s.Next(conn); !v.IsNull(); v, i = s.Next(conn), i+1 {
 			if i%2 == 0 {
-				k = v.Bytes()
+				k = append(k[:0], v.Bytes()...)
 			} else if err := scan(v, k); err != nil {
 				return err
 			}
@@ -86,53 +88,65 @@ func (s *ScanIterator) Close() error {
 }
 
 func (s *ScanIterator) Next(conn *Conn) resp.Value {
-	if s.err != nil {
-		return resp.NullValue()
-	}
-	reply := s.val.Reply()
-	if reply == nil {
-		// Iterator closed
+	var reply *resp.Reply
+	for s.err == nil {
+		if s.i < s.n {
+			v := s.val.Get(s.i)
+			s.i++
+			return v
+		}
 		if s.val.IsNull() {
+			// Iterator closed
 			return s.val
 		}
-		reply = BlankReply()
-	} else if s.cur == 0 {
-		ReleaseReply(reply)
-		s.val = resp.NullValue()
-		return s.val
-	} else {
-		reply.Reset()
-	}
+		reply = s.val.Reply()
+		if reply == nil {
+			reply = BlankReply()
+		} else if s.cur == 0 {
+			// Full cycle
+			goto end
+		} else {
+			reply.Reset()
+		}
 
-	p := BlankPipeline()
-	switch s.cmd {
-	case "HSCAN":
-		p.HScan(s.key, s.cur, s.match, s.count)
-	case "ZSCAN":
-		p.ZScan(s.key, s.cur, s.match, s.count)
-	case "SSCAN":
-		p.SScan(s.key, s.cur, s.match, s.count)
-	default:
-		p.Scan(s.cur, s.match, s.count)
+		p := BlankPipeline()
+		switch s.cmd {
+		case "HSCAN":
+			p.HScan(s.key, s.cur, s.match, s.count)
+		case "ZSCAN":
+			p.ZScan(s.key, s.cur, s.match, s.count)
+		case "SSCAN":
+			p.SScan(s.key, s.cur, s.match, s.count)
+		default:
+			p.Scan(s.cur, s.match, s.count)
+		}
+		s.err = conn.Do(p, reply)
+		p.Close()
+		if s.err != nil {
+			s.val = resp.NullValue()
+			ReleaseReply(reply)
+			return s.val
+		}
+		v := reply.Value().Get(0)
+		s.err = v.Err()
+		if s.err != nil {
+			goto end
+		}
+		cur, ok := v.Get(0).Int()
+		if !ok {
+			s.err = Err(`Protocol error`)
+			goto end
+		}
+		s.cur = cur
+		s.val = v.Get(1)
+		s.i, s.n = 0, s.val.Len()
+		if s.n == 0 {
+			s.val = v
+		}
 	}
-	s.err = conn.Do(p, reply)
-	p.Close()
-	if s.err != nil {
-		s.val = resp.NullValue()
-		ReleaseReply(reply)
-		return s.val
-	}
-	v := reply.Value().Get(0)
-	s.err = v.Err()
-	if s.err != nil {
-		s.val = resp.NullValue()
-		ReleaseReply(reply)
-		return s.val
-	}
-	s.cur, _ = v.Get(0).Int()
-	s.val = v.Get(1)
-	if s.val.Len() > 0 {
-		return s.val
-	}
-	return s.Next(conn)
+	return resp.NullValue()
+end:
+	s.val = resp.NullValue()
+	ReleaseReply(reply)
+	return s.val
 }
