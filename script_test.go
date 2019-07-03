@@ -1,6 +1,10 @@
 package redis
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/alxarch/fastredis/resp"
+)
 
 func TestScript(t *testing.T) {
 	conn, err := Dial(nil)
@@ -18,8 +22,8 @@ func TestScript(t *testing.T) {
 	p := BlankPipeline()
 	defer p.Close()
 	r := BlankReply()
-	defer r.Close()
-	p.EvalSHA(s, Key("foo"), Key("bar"), String("bar"), String("baz"))
+	defer ReleaseReply(r)
+	p.EvalSHA(s, resp.Key("foo"), resp.Key("bar"), resp.String("bar"), resp.String("baz"))
 
 	if err := conn.Do(p, r); err != nil {
 		t.Fatal(err)
@@ -31,7 +35,7 @@ func TestScript(t *testing.T) {
 	if n := v.Len(); n != 4 {
 		t.Errorf("Invalid value length: %d", n)
 	}
-	v.ForEachKV(func(k []byte, v Value) {
+	v.ForEachKV(func(k []byte, v resp.Value) {
 		switch string(k) {
 		case "foo":
 			if string(v.Bytes()) == "bar" {

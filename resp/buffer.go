@@ -48,11 +48,14 @@ func (b *Buffer) WriteInts(values ...int64) {
 }
 
 func (b *Buffer) WriteArgs(args ...Arg) {
-	b.WriteArray(len(args))
 	for i := range args {
 		a := &args[i]
 		b.writeArg(a)
 	}
+}
+func (b *Buffer) WriteArgsArray(args ...Arg) {
+	b.WriteArray(len(args))
+	b.WriteArgs(args...)
 }
 
 func (b *Buffer) WriteArg(a Arg) {

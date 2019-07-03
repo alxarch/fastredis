@@ -1,19 +1,43 @@
 package redis
 
 import (
-	"math"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/alxarch/fastredis/resp"
+	resp "github.com/alxarch/fastredis/resp"
 )
 
-// Pipeline is a command buffer.
+// Pipeline is a command buffer
 type Pipeline struct {
-	buf     []byte
-	scratch []byte
-	n       int64
+	resp.Buffer
+	n int
+}
+
+// Reset resets a pipeline
+func (p *Pipeline) Reset() {
+	p.Buffer.Reset()
+	p.n = 0
+}
+
+// Len returns the number of commands in a pipeline
+func (p *Pipeline) Len() int {
+	return p.n
+}
+
+// Size returns the size of the pipeline in bytes
+func (p *Pipeline) Size() int {
+	return len(p.Buffer.B)
+}
+
+func (p *Pipeline) Do(cmd string, args ...resp.Arg) {
+	p.Command(cmd, len(args))
+	p.WriteArgs(args...)
+}
+
+func (p *Pipeline) Command(cmd string, numArgs int) {
+	p.WriteArray(numArgs + 1)
+	p.WriteBulkString(cmd)
+	p.n++
 }
 
 var pipelinePool sync.Pool
@@ -33,145 +57,87 @@ func (p *Pipeline) Close() {
 	}
 }
 
-// Size returns the size of the pipeline in bytes
-func (p *Pipeline) Size() int {
-	return len(p.buf)
-}
-
-// Len returns the number of commands in the pipeline
-func (p *Pipeline) Len() int64 {
-	return p.n
-}
-
-// Reset resets the pipeline buffer.
-func (p *Pipeline) Reset() {
-	p.buf = p.buf[:0]
-	p.n = 0
-}
-
-func (p *Pipeline) appendArr(n int) {
-	p.buf = resp.AppendArray(p.buf, n)
-}
-func (p *Pipeline) cmd(cmd string, args ...Arg) {
-	p.buf = resp.AppendArray(p.buf, len(args)+1)
-	p.appendArg(String(cmd))
-	for _, a := range args {
-		p.appendArg(a)
-	}
-	p.n++
-}
-
-func (p *Pipeline) appendArg(a Arg) {
-	switch a.typ {
-	case typString, typKey:
-		p.buf = resp.AppendBulkString(p.buf, a.str)
-	case typBuffer:
-		p.buf = resp.AppendBulkStringRaw(p.buf, a.buf)
-	case typInt:
-		p.scratch = strconv.AppendInt(p.scratch[:0], int64(a.num), 10)
-		p.buf = resp.AppendBulkStringRaw(p.buf, p.scratch)
-	case typFloat:
-		p.scratch = strconv.AppendFloat(p.scratch, math.Float64frombits(a.num), 'f', -1, 64)
-		p.buf = resp.AppendBulkStringRaw(p.buf, p.scratch)
-	case typUint:
-		p.scratch = strconv.AppendUint(p.scratch, a.num, 10)
-		p.buf = resp.AppendBulkStringRaw(p.buf, p.scratch)
-	case typTrue:
-		p.buf = resp.AppendBulkString(p.buf, "true")
-	case typFalse:
-		p.buf = resp.AppendBulkString(p.buf, "false")
-	default:
-		p.buf = resp.AppendNullBulkString(p.buf)
-	}
-}
-
 func (p *Pipeline) HIncrBy(key, field string, n int64) {
-	p.cmd("HINCRBY", Key(key), String(field), Int(n))
+	p.Do("HINCRBY", resp.Key(key), resp.String(field), resp.Int(n))
 }
 func (p *Pipeline) HIncrByFloat(key, field string, f float64) {
-	p.cmd("HINCRBYFLOAT", Key(key), String(field), Float(f))
+	p.Do("HINCRBYFLOAT", resp.Key(key), resp.String(field), resp.Float(f))
 }
 
-func (p *Pipeline) HSet(key, field string, value Arg) {
-	p.cmd("HSET", Key(key), String(field), value)
+func (p *Pipeline) HSet(key, field string, value resp.Arg) {
+	p.Do("HSET", resp.Key(key), resp.String(field), value)
 }
 func (p *Pipeline) HGet(key, field string) {
-	p.cmd("HSET", Key(key), String(field))
+	p.Do("HSET", resp.Key(key), resp.String(field))
 }
 
 func (p *Pipeline) Expire(key string, ttl time.Duration) {
-	p.cmd("PEXPIRE", Key(key), Int(int64(ttl/time.Millisecond)))
+	p.Do("PEXPIRE", resp.Key(key), resp.Int(int64(ttl/time.Millisecond)))
 }
 
-func (p *Pipeline) HSetNX(key, field string, value Arg) {
-	p.cmd("HSETNX", Key(key), String(field), value)
+func (p *Pipeline) HSetNX(key, field string, value resp.Arg) {
+	p.Do("HSETNX", resp.Key(key), resp.String(field), value)
 }
 
 func (p *Pipeline) FlushDB() {
-	p.cmd("FLUSHDB")
+	p.Do("FLUSHDB")
 }
 func (p *Pipeline) Select(db int64) {
-	p.cmd("SELECT", Int(db))
+	p.Do("SELECT", resp.Int(db))
 }
 
-func (p *Pipeline) Set(key string, value Arg, ttl time.Duration) {
+func (p *Pipeline) Set(key string, value resp.Arg, ttl time.Duration) {
 	ttl /= time.Millisecond
 	if ttl > 0 {
-		p.cmd("SET", Key(key), value, String("PX"), Int(int64(ttl)))
+		p.Do("SET", resp.Key(key), value, resp.String("PX"), resp.Int(int64(ttl)))
 	} else {
-		p.cmd("SET", Key(key), value)
+		p.Do("SET", resp.Key(key), value)
 	}
 }
 
-func (p *Pipeline) SetNX(key string, value Arg, ttl time.Duration) {
+func (p *Pipeline) SetNX(key string, value resp.Arg, ttl time.Duration) {
 	ttl /= time.Millisecond
 	if ttl > 0 {
-		p.cmd("SET", Key(key), value, String("PX"), Int(int64(ttl)), String("NX"))
+		p.Do("SET", resp.Key(key), value, resp.String("PX"), resp.Int(int64(ttl)), resp.String("NX"))
 	} else {
-		p.cmd("SET", Key(key), value, String("NX"))
+		p.Do("SET", resp.Key(key), value, resp.String("NX"))
 	}
 }
 
-func (p *Pipeline) SetXX(key string, value Arg, ttl time.Duration) {
+func (p *Pipeline) SetXX(key string, value resp.Arg, ttl time.Duration) {
 	ttl /= time.Millisecond
 	if ttl > 0 {
-		p.cmd("SET", Key(key), value, String("PX"), Int(int64(ttl)), String("XX"))
+		p.Do("SET", resp.Key(key), value, resp.String("PX"), resp.Int(int64(ttl)), resp.String("XX"))
 	} else {
-		p.cmd("SET", Key(key), value, String("XX"))
+		p.Do("SET", resp.Key(key), value, resp.String("XX"))
 	}
 }
 
 func (p *Pipeline) Get(key string) {
-	p.cmd("GET", Key(key))
+	p.Do("GET", resp.Key(key))
 }
-func (p *Pipeline) MSet(pairs ...KV) {
-	p.appendArr(len(pairs)*2 + 1)
-	p.appendArg(String("MSET"))
-	for _, pair := range pairs {
-		p.appendArg(Key(pair.Key))
-		p.appendArg(pair.Arg)
+func (p *Pipeline) MSet(pairs ...resp.KV) {
+	p.Command("MSET", len(pairs)*2+1)
+	for _, kv := range pairs {
+		p.WriteArg(resp.Key(kv.Key))
+		p.WriteArg(kv.Arg)
 	}
-	p.n++
 }
 func (p *Pipeline) MGet(keys ...string) {
-	p.appendArr(len(keys) + 1)
-	p.appendArg(String("MGET"))
+	p.Command("MGET", len(keys))
 	for _, key := range keys {
-		p.appendArg(Key(key))
+		p.WriteArg(resp.Key(key))
 	}
-	p.n++
 }
 func (p *Pipeline) Del(keys ...string) {
-	p.appendArr(len(keys) + 1)
-	p.appendArg(String("DEL"))
+	p.Command("DEL", len(keys))
 	for _, key := range keys {
-		p.appendArg(Key(key))
+		p.WriteArg(resp.Key(key))
 	}
-	p.n++
 }
 
 func (p *Pipeline) Keys(match string) {
-	p.cmd("KEYS", String(match))
+	p.Do("KEYS", resp.String(match))
 }
 
 const defaultScanCount = 10
@@ -181,9 +147,9 @@ func (p *Pipeline) Scan(cur int64, match string, count int64) {
 		count = defaultScanCount
 	}
 	if match == "" {
-		p.cmd("SCAN", Int(cur), String("COUNT"), Int(count))
+		p.Do("SCAN", resp.Int(cur), resp.String("COUNT"), resp.Int(count))
 	} else {
-		p.cmd("SCAN", Int(cur), String("MATCH"), String(match), String("COUNT"), Int(count))
+		p.Do("SCAN", resp.Int(cur), resp.String("MATCH"), resp.String(match), resp.String("COUNT"), resp.Int(count))
 	}
 }
 
@@ -192,9 +158,9 @@ func (p *Pipeline) SScan(key string, cur int64, match string, count int64) {
 		count = defaultScanCount
 	}
 	if match == "" {
-		p.cmd("SSCAN", Int(cur), String(key), String("COUNT"), Int(count))
+		p.Do("SSCAN", resp.Int(cur), resp.String(key), resp.String("COUNT"), resp.Int(count))
 	} else {
-		p.cmd("SSCAN", String(key), Int(cur), String("MATCH"), String(match), String("COUNT"), Int(count))
+		p.Do("SSCAN", resp.String(key), resp.Int(cur), resp.String("MATCH"), resp.String(match), resp.String("COUNT"), resp.Int(count))
 	}
 }
 
@@ -203,9 +169,9 @@ func (p *Pipeline) HScan(key string, cur int64, match string, count int64) {
 		count = defaultScanCount
 	}
 	if match == "" {
-		p.cmd("HSCAN", Int(cur), String(key), String("COUNT"), Int(count))
+		p.Do("HSCAN", resp.Int(cur), resp.String(key), resp.String("COUNT"), resp.Int(count))
 	} else {
-		p.cmd("HSCAN", String(key), Int(cur), String("MATCH"), String(match), String("COUNT"), Int(count))
+		p.Do("HSCAN", resp.String(key), resp.Int(cur), resp.String("MATCH"), resp.String(match), resp.String("COUNT"), resp.Int(count))
 	}
 }
 
@@ -214,38 +180,35 @@ func (p *Pipeline) ZScan(key string, cur int64, match string, count int64) {
 		count = defaultScanCount
 	}
 	if match == "" {
-		p.cmd("ZSCAN", Int(cur), String(key), String("COUNT"), Int(count))
+		p.Do("ZSCAN", resp.Int(cur), resp.String(key), resp.String("COUNT"), resp.Int(count))
 	} else {
-		p.cmd("ZSCAN", String(key), Int(cur), String("MATCH"), String(match), String("COUNT"), Int(count))
+		p.Do("ZSCAN", resp.String(key), resp.Int(cur), resp.String("MATCH"), resp.String(match), resp.String("COUNT"), resp.Int(count))
 	}
 }
 
-func (p *Pipeline) Eval(script string, keysAndArgs ...Arg) {
-	p.appendArr(len(keysAndArgs) + 3)
-	p.appendArg(String("EVAL"))
-	p.appendArg(String(script))
-	p.appendEval(keysAndArgs)
+func (p *Pipeline) Eval(script string, keysAndArgs ...resp.Arg) {
+	p.Command("EVAL", len(keysAndArgs)+2) // Script + NumKeys
+	p.WriteArg(resp.String(script))
+	p.eval(keysAndArgs)
 }
 
-func (p *Pipeline) EvalSHA(s *Script, keysAndArgs ...Arg) {
-	p.appendArr(len(keysAndArgs) + 3)
-	p.appendArg(String("EVALSHA"))
-	p.appendArg(Raw(s.sha1[:]))
-	p.appendEval(keysAndArgs)
+func (p *Pipeline) EvalSHA(s *Script, keysAndArgs ...resp.Arg) {
+	p.Command("EVALSHA", len(keysAndArgs)+2)
+	p.WriteArg(resp.Raw(s.sha1[:]))
+	p.eval(keysAndArgs)
 }
 
-func (p *Pipeline) appendEval(keysAndArgs []Arg) {
+func (p *Pipeline) eval(keysAndArgs []resp.Arg) {
 	keys := keysAndArgs
-	for i := range keys {
-		if keys[i].typ != typKey {
+	for i, k := range keys {
+		if !k.IsKey() {
 			keys = keys[:i]
 			break
 		}
 	}
-	p.appendArg(Int(int64(len(keys))))
+	p.WriteArg(resp.Int(int64(len(keys))))
 	for _, a := range keysAndArgs {
-		p.appendArg(a)
+		p.WriteArg(a)
 	}
-	p.n++
 
 }

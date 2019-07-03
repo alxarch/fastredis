@@ -9,20 +9,18 @@ import (
 func TestConn(t *testing.T) {
 	conn, err := Dial(nil)
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatalf(`Dial nil failed: %s`, err)
 	}
 	p := BlankPipeline()
 	defer p.Close()
 	r := BlankReply()
-	defer r.Close()
+	defer ReleaseReply(r)
 	p.Select(10)
-	p.Set("foo", String("bar"), 0)
+	p.Set("foo", resp.String("bar"), 0)
 	p.Keys("*")
 	p.FlushDB()
 	if err := conn.Do(p, r); err != nil {
-		t.Error(err)
-		return
+		t.Fatalf(`Do failed: %s`, err)
 	}
 	v := r.Value()
 	if v.Len() != 4 {

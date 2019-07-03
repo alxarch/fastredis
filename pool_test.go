@@ -1,9 +1,10 @@
 package redis
 
 import (
-	"reflect"
 	"testing"
 	"time"
+
+	"github.com/alxarch/fastredis/resp"
 )
 
 func Test_Pool(t *testing.T) {
@@ -15,7 +16,7 @@ func Test_Pool(t *testing.T) {
 	defer pool.Put(conn)
 	p := BlankPipeline()
 	defer p.Close()
-	p.HSet("foo", "bar", String("baz"))
+	p.HSet("foo", "bar", resp.String("baz"))
 	conn.Do(p, nil)
 
 }
@@ -24,9 +25,6 @@ func Test_ParseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error %s", err)
 	}
-	if def := DefaultPoolOptions(); !reflect.DeepEqual(&opts, &def) {
-		t.Errorf("Invalid blank options %v != %v", opts, def)
-
-	}
+	_ = opts
 
 }

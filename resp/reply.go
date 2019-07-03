@@ -2,8 +2,8 @@ package resp
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
-	"sync"
 )
 
 // Reply is a reply for a redis command.
@@ -13,10 +13,22 @@ type Reply struct {
 	n      int // number of read values
 }
 
+func ParseValue(b []byte) (Value, error) {
+	rep := new(Reply)
+	r := bytes.NewReader(b)
+	return rep.ReadFrom(bufio.NewReader(r))
+
+}
+
 // Value is a value in a redis reply.
 type Value struct {
 	id    int
 	reply *Reply
+}
+
+// NullValue returns a null value
+func NullValue() Value {
+	return Value{-1, nil}
 }
 
 type value struct {
@@ -25,23 +37,6 @@ type value struct {
 	num   int64
 	typ   byte
 	arr   []int
-}
-
-var replyPool sync.Pool
-
-// BlankReply returns a blank reply from the pool
-func BlankReply() *Reply {
-	x := replyPool.Get()
-	if x == nil {
-		return new(Reply)
-	}
-	return x.(*Reply)
-}
-
-// Close resets and returns a Reply to the pool.
-func (reply *Reply) Close() {
-	reply.Reset()
-	replyPool.Put(reply)
 }
 
 // Reset resets a reply invalidating any Value pointing to it.
@@ -290,4 +285,38 @@ func (reply *Reply) get(id int) *value {
 		return &reply.values[id]
 	}
 	return nil
+}
+
+// ForEach iterates each value in a BulkStringArray reply
+func (v Value) ForEach(fn func(v Value)) {
+	if fn == nil {
+		return
+	}
+	if vv := v.reply.get(v.id); vv != nil || vv.typ == Array {
+		for _, id := range vv.arr {
+			fn(Value{id: id, reply: v.reply})
+		}
+	}
+}
+
+// ForEachKV iterates each key value pair in a BulkStringArray reply
+func (v Value) ForEachKV(fn func(k []byte, v Value)) {
+	if fn == nil {
+		return
+	}
+	if vv := v.reply.get(v.id); vv != nil && vv.typ == Array {
+		var k *value
+		for i, id := range vv.arr {
+			if i%2 == 0 {
+				k = v.reply.get(id)
+			} else if k != nil {
+				fn(k.slice(v.reply.buffer), Value{id: id, reply: v.reply})
+				k = nil
+			}
+		}
+		if k != nil {
+			fn(k.slice(v.reply.buffer), NullValue())
+		}
+	}
+
 }

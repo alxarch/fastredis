@@ -62,3 +62,17 @@ func Bool(b bool) Arg {
 	}
 	return Arg{typ: typFalse}
 }
+
+type KV struct {
+	Key string
+	Arg
+}
+
+// Pair creates a key value pair argument.
+func Pair(key string, arg Arg) KV {
+	return KV{Key: key, Arg: arg}
+}
+
+func (a Arg) IsKey() bool {
+	return a.typ == typKey
+}

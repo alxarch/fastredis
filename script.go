@@ -1,5 +1,7 @@
 package redis
 
+import "github.com/alxarch/fastredis/resp"
+
 type Script struct {
 	sha1 [40]byte
 }
@@ -12,12 +14,10 @@ func (c *Conn) LoadScript(src string) (*Script, error) {
 	p := BlankPipeline()
 	defer p.Close()
 	r := BlankReply()
-	defer r.Close()
-	p.appendArr(3)
-	p.appendArg(String("SCRIPT"))
-	p.appendArg(String("LOAD"))
-	p.appendArg(String(src))
-	p.n++
+	defer ReleaseReply(r)
+	p.Command("SCRIPT", 2)
+	p.WriteArg(resp.String("LOAD"))
+	p.WriteArg(resp.String(src))
 	if err := c.Do(p, r); err != nil {
 		return nil, err
 	}

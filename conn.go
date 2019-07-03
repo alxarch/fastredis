@@ -95,15 +95,15 @@ func NewConn(conn net.Conn, options *ConnOptions) *Conn {
 	return &c
 }
 
-func (c *Conn) Do(p *Pipeline, r *Reply) (err error) {
+func (c *Conn) Do(p *Pipeline, r *resp.Reply) (err error) {
 	if c.err != nil {
 		return c.err
 	}
-	n := p.n
+	n := int64(p.Len())
 	if n <= 0 {
 		return nil
 	}
-	_, err = c.Write(p.buf)
+	_, err = c.Write(p.B)
 	if err == nil {
 		if r == nil {
 			if !c.options.WriteOnly {
