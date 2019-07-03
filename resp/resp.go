@@ -7,11 +7,11 @@ import (
 )
 
 const (
-	SimpleString = '+'
-	Error        = '-'
-	Integer      = ':'
-	BulkString   = '$'
-	Array        = '*'
+	SimpleString byte = '+'
+	Error        byte = '-'
+	Integer      byte = ':'
+	BulkString   byte = '$'
+	Array        byte = '*'
 )
 
 var (
