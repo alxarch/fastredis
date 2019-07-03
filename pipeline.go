@@ -169,7 +169,7 @@ func (p *Pipeline) HScan(key string, cur int64, match string, count int64) {
 		count = defaultScanCount
 	}
 	if match == "" {
-		p.Do("HSCAN", resp.Int(cur), resp.String(key), resp.String("COUNT"), resp.Int(count))
+		p.Do("HSCAN", resp.String(key), resp.Int(cur), resp.String("COUNT"), resp.Int(count))
 	} else {
 		p.Do("HSCAN", resp.String(key), resp.Int(cur), resp.String("MATCH"), resp.String(match), resp.String("COUNT"), resp.Int(count))
 	}
