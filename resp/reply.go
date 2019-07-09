@@ -188,7 +188,7 @@ func (reply *Reply) ReadFromN(r *bufio.Reader, n int64) (Value, error) {
 
 func (reply *Reply) readArray(r *bufio.Reader, n int64) error {
 	if n < -1 {
-		return ProtocolError
+		return ProtocolError(`Invalid array size`)
 	}
 	id := reply.n
 	v := reply.value()
@@ -276,7 +276,7 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		}
 		return reply.readArray(r, n)
 	default:
-		return ProtocolError
+		return ProtocolError(`Invalid RESP value type`)
 	}
 }
 

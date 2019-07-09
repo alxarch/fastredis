@@ -1,11 +1,12 @@
+// Package resp provides RESP protocol serialization and deserialization
 package resp
 
 import (
 	"bufio"
-	"errors"
 	"strconv"
 )
 
+// Value types
 const (
 	SimpleString byte = '+'
 	Error        byte = '-'
@@ -14,9 +15,15 @@ const (
 	Array        byte = '*'
 )
 
-var (
-	ProtocolError = errors.New("Protocol error")
-)
+// ProtocolError is a RESP protocol error
+type ProtocolError string
+
+func (e ProtocolError) Error() string {
+	return string(e)
+}
+func (e ProtocolError) String() string {
+	return string(e)
+}
 
 func ReadBulkString(buf []byte, size int64, r *bufio.Reader) ([]byte, error) {
 	switch {
@@ -54,7 +61,7 @@ func ReadBulkString(buf []byte, size int64, r *bufio.Reader) ([]byte, error) {
 	case size == -1:
 		return buf, nil
 	default:
-		return buf, ProtocolError
+		return buf, ProtocolError(`Invalid bulk string size`)
 	}
 }
 func ReadLine(buf []byte, r *bufio.Reader) ([]byte, error) {
@@ -85,7 +92,7 @@ btoi:
 		if 0 <= c && c <= 9 {
 			n = n*10 + int64(c)
 		} else {
-			return 0, ProtocolError
+			return 0, ProtocolError("Invalid integer value")
 		}
 	}
 	if isPrefix {
@@ -134,7 +141,7 @@ func Discard(r *bufio.Reader) error {
 		return err
 	default:
 		r.UnreadByte()
-		return ProtocolError
+		return ProtocolError(`Invalid RESP type`)
 	}
 }
 
