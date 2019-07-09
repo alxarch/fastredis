@@ -14,7 +14,7 @@ func Test_Scan(t *testing.T) {
 	key := fmt.Sprintf("scantest:%d", now.UnixNano())
 	p.HSet(key, "foo", resp.String("bar"))
 	p.HSet(key, "bar", resp.String("baz"))
-	conn, err := Dial(nil)
+	conn, err := Dial(":6379", ConnOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

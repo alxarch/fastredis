@@ -7,7 +7,7 @@ import (
 )
 
 func TestConn(t *testing.T) {
-	conn, err := Dial(nil)
+	conn, err := Dial(":6379", ConnOptions{})
 	if err != nil {
 		t.Fatalf(`Dial nil failed: %s`, err)
 	}

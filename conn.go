@@ -18,7 +18,6 @@ type Conn struct {
 }
 
 type ConnOptions struct {
-	Address        net.Addr
 	ReadBufferSize int
 	ReadTimeout    time.Duration
 	WriteTimeout   time.Duration
@@ -28,25 +27,9 @@ type ConnOptions struct {
 	// RetryBackoff   time.Duration
 }
 
-const DefaultPort = 6379
-
-func (options *ConnOptions) Addr() net.Addr {
-	if options == nil || options.Address == nil {
-		return &net.TCPAddr{
-			IP:   net.ParseIP("0.0.0.0"),
-			Port: DefaultPort,
-		}
-
-	}
-	return options.Address
-}
-
-func Dial(options *ConnOptions) (*Conn, error) {
-	if options == nil {
-		options = new(ConnOptions)
-	}
-	addr := options.Addr()
-	conn, err := net.Dial(addr.Network(), addr.String())
+func Dial(addr string, options ConnOptions) (*Conn, error) {
+	// addr := options.Addr()
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +44,7 @@ func Dial(options *ConnOptions) (*Conn, error) {
 		return nil, err
 	}
 
-	return NewConn(conn, options), nil
+	return newConn(conn, options), nil
 }
 
 const minBufferSize = 4096
@@ -70,16 +53,13 @@ type closeReader interface {
 	CloseRead() error
 }
 
-func NewConn(conn net.Conn, options *ConnOptions) *Conn {
-	if options == nil {
-		options = new(ConnOptions)
-	}
+func newConn(conn net.Conn, options ConnOptions) *Conn {
 	now := time.Now()
 	c := Conn{
 		conn:       conn,
 		lastUsedAt: now,
 		createdAt:  now,
-		options:    options,
+		options:    &options,
 	}
 	size := options.ReadBufferSize
 	if size < minBufferSize {

@@ -2,7 +2,6 @@ package redis
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -16,31 +15,19 @@ import (
 	"github.com/alxarch/fastredis/resp"
 )
 
-type PoolOptions struct {
-	ConnOptions
-	MaxConnections    int
-	MaxIdleTime       time.Duration
-	MaxConnectionAge  time.Duration
-	ClockFrequency    time.Duration
-	CheckIdleInterval time.Duration
-	Dial              func(network, address string) (net.Conn, error)
-}
-
-func DefaultPoolOptions() PoolOptions {
-	return PoolOptions{
-		ConnOptions: ConnOptions{
-			ReadBufferSize: 8192,
-			ReadTimeout:    5 * time.Second,
-			WriteTimeout:   5 * time.Second,
-		},
-		MaxConnections:    8,
-		MaxIdleTime:       time.Minute,
-		MaxConnectionAge:  10 * time.Minute,
-		ClockFrequency:    100 * time.Millisecond,
-		CheckIdleInterval: 10 * time.Second,
-		Dial:              net.Dial,
-	}
-}
+// // DefaultPoolOptions returns the default options for a PoolObject
+// func DefaultPoolOptions() PoolOptions {
+// 	return PoolOptions{
+// 		ReadBufferSize:    8192,
+// 		ReadTimeout:       5 * time.Second,
+// 		WriteTimeout:      5 * time.Second,
+// 		MaxConnections:    8,
+// 		MaxIdleTime:       time.Minute,
+// 		MaxConnectionAge:  10 * time.Minute,
+// 		ClockFrequency:    100 * time.Millisecond,
+// 		CheckIdleInterval: 10 * time.Second,
+// 	}
+// }
 
 type PoolStats struct {
 	Hits     uint32
@@ -49,7 +36,17 @@ type PoolStats struct {
 }
 
 type Pool struct {
-	options *PoolOptions
+	noCopy
+
+	ReadBufferSize    int
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	Address           string
+	MaxConnections    int
+	MaxIdleTime       time.Duration
+	MaxConnectionAge  time.Duration
+	CheckIdleInterval time.Duration
+	Dial              func(address string) (net.Conn, error)
 
 	numOpen int32
 	numIdle int32
@@ -64,23 +61,40 @@ type Pool struct {
 	stats PoolStats
 }
 
-func NewPool(options *PoolOptions) *Pool {
-	if options == nil {
-		options = new(PoolOptions)
-	}
-	if options.Dial == nil {
-		options.Dial = net.Dial
-	}
+func defaultDial(addr string) (net.Conn, error) {
+	return net.Dial("tcp", addr)
+}
+
+func NewPool(configURL string) (*Pool, error) {
 	pool := Pool{
-		options:   options,
-		closeChan: make(chan struct{}),
+		Dial:              defaultDial,
+		CheckIdleInterval: 10 * time.Second,
+		ReadBufferSize:    8192,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		MaxConnections:    8,
+		MaxIdleTime:       time.Minute,
+		MaxConnectionAge:  10 * time.Minute,
 	}
+	if err := pool.parseURL(configURL); err != nil {
+		return nil, err
+	}
+	return &pool, pool.Start()
+}
+
+type noCopy struct{}
+
+func (noCopy) Lock()   {}
+func (noCopy) Unlock() {}
+
+func (pool *Pool) Start() error {
+	if pool.closeChan != nil {
+		return Err(`Alreadyy started`)
+	}
+	pool.closeChan = make(chan struct{})
 	pool.cond.L = &pool.mu
-	go pool.runClock()
-	if options.CheckIdleInterval > 0 {
-		go pool.runCleaner()
-	}
-	return &pool
+	go pool.runCleaner()
+	return nil
 }
 
 func (pool *Pool) Clean() (int, error) {
@@ -98,7 +112,7 @@ func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
 	}
 	i := 0
 	idle := pool.idle
-	for 0 <= i && i < len(idle) && now.Sub(idle[i].lastUsedAt) > pool.options.MaxIdleTime {
+	for 0 <= i && i < len(idle) && now.Sub(idle[i].lastUsedAt) > pool.MaxIdleTime {
 		i++
 	}
 	if i == 0 {
@@ -144,14 +158,14 @@ func (pool *Pool) Stop() {
 	pool.mu.Unlock()
 }
 
-const poolClockInterval = 100 * time.Millisecond
+// const poolClockInterval = 100 * time.Millisecond
 
 func (pool *Pool) newConn(conn net.Conn) (c *Conn) {
 	now := time.Now()
 	x := connPool.Get()
 	if x == nil {
 		c = new(Conn)
-		size := pool.options.ReadBufferSize
+		size := pool.ReadBufferSize
 		if size < minBufferSize {
 			size = minBufferSize
 		}
@@ -160,20 +174,23 @@ func (pool *Pool) newConn(conn net.Conn) (c *Conn) {
 		c = x.(*Conn)
 		c.r.Reset(c)
 	}
-	c.options = &pool.options.ConnOptions
+	c.options = &ConnOptions{
+		ReadBufferSize: pool.ReadBufferSize,
+		ReadTimeout:    pool.ReadTimeout,
+		WriteTimeout:   pool.WriteTimeout,
+	}
 	c.conn = conn
 	c.createdAt = now
 	c.lastUsedAt = now
 	return
 }
 
-func (pool *Pool) dial() {
-	addr := pool.options.Addr()
-	dialer := pool.options.Dial
+func (pool *Pool) dial(addr string) {
+	dialer := pool.Dial
 	if dialer == nil {
-		dialer = net.Dial
+		dialer = defaultDial
 	}
-	conn, err := dialer(addr.Network(), addr.String())
+	conn, err := dialer(addr)
 	if err != nil {
 		atomic.AddInt32(&pool.numOpen, -1)
 		return
@@ -182,7 +199,7 @@ func (pool *Pool) dial() {
 }
 
 func (pool *Pool) runCleaner() {
-	interval := pool.options.MaxIdleTime
+	interval := pool.MaxIdleTime
 	if interval < time.Second {
 		interval = time.Second
 	}
@@ -198,31 +215,32 @@ func (pool *Pool) runCleaner() {
 		}
 	}
 }
-func (pool *Pool) setClock(t time.Time) {
-	n := t.UnixNano()
-	pool.mu.Lock()
-	pool.clock = n
-	if len(pool.idle) == 0 {
-		pool.cond.Broadcast()
-	}
-	pool.mu.Unlock()
 
-}
-func (pool *Pool) runClock() {
-	pool.setClock(time.Now())
-	tick := time.NewTicker(poolClockInterval)
-	for {
-		select {
-		case <-pool.closeChan:
-			tick.Stop()
-			return
-		case now := <-tick.C:
-			pool.setClock(now)
-		}
-	}
-}
+// func (pool *Pool) setClock(t time.Time) {
+// 	n := t.UnixNano()
+// 	pool.mu.Lock()
+// 	pool.clock = n
+// 	if len(pool.idle) == 0 {
+// 		pool.cond.Broadcast()
+// 	}
+// 	pool.mu.Unlock()
 
-// Pool to hold *Conn objects
+// }
+// func (pool *Pool) runClock() {
+// 	pool.setClock(time.Now())
+// 	tick := time.NewTicker(poolClockInterval)
+// 	for {
+// 		select {
+// 		case <-pool.closeChan:
+// 			tick.Stop()
+// 			return
+// 		case now := <-tick.C:
+// 			pool.setClock(now)
+// 		}
+// 	}
+// }
+
+// pool of *Conn objects
 var connPool sync.Pool
 
 func (pool *Pool) closeConn(c *Conn) {
@@ -239,6 +257,7 @@ func (pool *Pool) closeConn(c *Conn) {
 	}
 }
 
+// Put releases a connection to the pool
 func (pool *Pool) Put(c *Conn) {
 	if c == nil {
 		return
@@ -249,7 +268,7 @@ func (pool *Pool) Put(c *Conn) {
 		return
 	}
 	now := time.Now()
-	if pool.options.MaxConnectionAge > 0 && now.Sub(c.createdAt) > pool.options.MaxConnectionAge {
+	if pool.MaxConnectionAge > 0 && now.Sub(c.createdAt) > pool.MaxConnectionAge {
 		pool.closeConn(c)
 		return
 	}
@@ -258,15 +277,15 @@ func (pool *Pool) Put(c *Conn) {
 }
 
 func (pool *Pool) put(c *Conn) {
-	// c.lastUsedAt = now
-	// n := now.UnixNano()
+	c.lastUsedAt = time.Now()
+	n := c.lastUsedAt.UnixNano()
 	pool.mu.Lock()
 	if pool.closed {
 		pool.mu.Unlock()
 		pool.closeConn(c)
 		return
 	}
-	// pool.clock = n
+	pool.clock = n
 	pool.idle = append(pool.idle, c)
 	if pool.cond.L == nil {
 		pool.cond.L = &pool.mu
@@ -310,20 +329,21 @@ func (pool *Pool) get(deadline int64) (conn *Conn, err error) {
 }
 
 var (
-	errConnWriteOnly    = errors.New("Write only connection")
-	errConnClosed       = errors.New("Connection closed")
-	errPoolClosed       = errors.New("Pool closed")
-	errDeadlineExceeded = errors.New("Deadline exceeded")
+	errConnWriteOnly    = Err("Write only connection")
+	errConnClosed       = Err("Connection closed")
+	errPoolClosed       = Err("Pool closed")
+	errDeadlineExceeded = Err("Deadline exceeded")
 )
 
 func (pool *Pool) maxConnections() int32 {
-	max := int32(pool.options.MaxConnections)
+	max := int32(pool.MaxConnections)
 	if max <= 0 {
 		max = math.MaxInt32
 	}
 	return max
 }
 
+// Get gets an empty connection from the pool
 func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
 	for {
 		if n := atomic.LoadInt32(&pool.numIdle); n > 0 {
@@ -340,7 +360,7 @@ func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
 	for {
 		if n := atomic.LoadInt32(&pool.numOpen); 0 <= n && n < max {
 			if atomic.CompareAndSwapInt32(&pool.numOpen, n, n+1) {
-				go pool.dial()
+				go pool.dial(pool.Address)
 				break
 			}
 		} else if n < 0 {
@@ -362,8 +382,8 @@ func (pool *Pool) Do(p *Pipeline, r *resp.Reply) error {
 	return err
 }
 
-func ParseURL(rawurl string) (o PoolOptions, err error) {
-	o = DefaultPoolOptions()
+// ParseURL parses a URL to PoolOptions
+func (pool *Pool) parseURL(rawurl string) (err error) {
 	if rawurl == "" {
 		return
 	}
@@ -386,53 +406,44 @@ func ParseURL(rawurl string) (o PoolOptions, err error) {
 	if port == "" {
 		port = "6379"
 	}
-	o.Address = addr(host + ":" + port)
+	pool.Address = host + ":" + port
 
 	if v, ok := q["read-timeout"]; ok && len(v) > 0 {
 		if d, _ := time.ParseDuration(v[0]); d > 0 {
-			o.ReadTimeout = d
+			pool.ReadTimeout = d
 		}
 	}
 	if v, ok := q["write-timeout"]; ok && len(v) > 0 {
 		if d, _ := time.ParseDuration(v[0]); d > 0 {
-			o.WriteTimeout = d
+			pool.WriteTimeout = d
 		}
 	}
 	if v, ok := q["read-buffer-size"]; ok && len(v) > 0 {
 		if size, _ := strconv.Atoi(v[0]); size > 0 {
-			o.ReadBufferSize = size
+			pool.ReadBufferSize = size
 		}
 	}
 
 	if v, ok := q["max-conn-age"]; ok && len(v) > 0 {
 		if d, _ := time.ParseDuration(v[0]); d > 0 {
-			o.MaxConnectionAge = d
+			pool.MaxConnectionAge = d
 		}
 	}
 	if v, ok := q["max-idle-time"]; ok && len(v) > 0 {
 		if d, _ := time.ParseDuration(v[0]); d > 0 {
-			o.MaxIdleTime = d
+			pool.MaxIdleTime = d
 		}
 	}
 	if v, ok := q["check-idle-interval"]; ok && len(v) > 0 {
 		if d, _ := time.ParseDuration(v[0]); d > 0 {
-			o.CheckIdleInterval = d
+			pool.CheckIdleInterval = d
 		}
 	}
-	if v, ok := q["clock-frequency"]; ok && len(v) > 0 {
-		if d, _ := time.ParseDuration(v[0]); d > 0 {
-			o.ClockFrequency = d
-		}
-	}
+	// if v, ok := q["clock-frequency"]; ok && len(v) > 0 {
+	// 	if d, _ := time.ParseDuration(v[0]); d > 0 {
+	// 		pool.ClockFrequency = d
+	// 	}
+	// }
 
 	return
-}
-
-type addr string
-
-func (addr) Network() string {
-	return "tcp"
-}
-func (a addr) String() string {
-	return string(a)
 }

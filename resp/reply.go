@@ -227,7 +227,7 @@ func (reply *Reply) read(r *bufio.Reader) error {
 	switch typ {
 	case Error, SimpleString:
 		start := len(reply.buffer)
-		reply.buffer, err = ReadLine(reply.buffer, r)
+		reply.buffer, err = readLine(reply.buffer, r)
 		if err != nil {
 			return err
 		}
@@ -240,7 +240,7 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		return nil
 	case Integer:
 		var n int64
-		n, err = ReadInt(r)
+		n, err = readInt(r)
 		if err != nil {
 			return err
 		}
@@ -252,7 +252,7 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		return nil
 	case BulkString:
 		var n int64
-		n, err = ReadInt(r)
+		n, err = readInt(r)
 		if err != nil {
 			return err
 		}
@@ -270,7 +270,7 @@ func (reply *Reply) read(r *bufio.Reader) error {
 		return nil
 	case Array:
 		var n int64
-		n, err = ReadInt(r)
+		n, err = readInt(r)
 		if err != nil {
 			return err
 		}

@@ -64,7 +64,8 @@ func ReadBulkString(buf []byte, size int64, r *bufio.Reader) ([]byte, error) {
 		return buf, ProtocolError(`Invalid bulk string size`)
 	}
 }
-func ReadLine(buf []byte, r *bufio.Reader) ([]byte, error) {
+
+func readLine(buf []byte, r *bufio.Reader) ([]byte, error) {
 	line, isPrefix, err := r.ReadLine()
 	buf = append(buf, line...)
 	for isPrefix && err == nil {
@@ -74,7 +75,7 @@ func ReadLine(buf []byte, r *bufio.Reader) ([]byte, error) {
 	return buf, err
 }
 
-func ReadInt(r *bufio.Reader) (int64, error) {
+func readInt(r *bufio.Reader) (int64, error) {
 	line, isPrefix, err := r.ReadLine()
 	if err != nil {
 		return 0, err
@@ -126,14 +127,14 @@ func Discard(r *bufio.Reader) error {
 		}
 	case BulkString:
 		var n int64
-		n, err = ReadInt(r)
+		n, err = readInt(r)
 		if err == nil {
 			_, err = r.Discard(int(n) + 2)
 		}
 		return err
 	case Array:
 		var n int64
-		n, err = ReadInt(r)
+		n, err = readInt(r)
 		for err == nil && n > 0 {
 			err = Discard(r)
 			n--
@@ -149,20 +150,20 @@ func appendCRLF(buf []byte) []byte {
 	return append(buf, '\r', '\n')
 }
 
-func AppendSimpleString(buf []byte, s string) []byte {
+func appendSimpleString(buf []byte, s string) []byte {
 	buf = append(buf, SimpleString)
 	buf = append(buf, s...)
 	return appendCRLF(buf)
 }
 
-func AppendBulkStringRaw(buf []byte, raw []byte) []byte {
+func appendBulkStringRaw(buf []byte, raw []byte) []byte {
 	buf = append(buf, BulkString)
 	buf = strconv.AppendInt(buf, int64(len(raw)), 10)
 	buf = appendCRLF(buf)
 	buf = append(buf, raw...)
 	return appendCRLF(buf)
 }
-func AppendBulkString(buf []byte, s string) []byte {
+func appendBulkString(buf []byte, s string) []byte {
 	buf = append(buf, BulkString)
 	buf = strconv.AppendInt(buf, int64(len(s)), 10)
 	buf = appendCRLF(buf)
@@ -170,41 +171,41 @@ func AppendBulkString(buf []byte, s string) []byte {
 	return appendCRLF(buf)
 }
 
-func AppendError(buf []byte, err string) []byte {
+func appendError(buf []byte, err string) []byte {
 	buf = append(buf, Error)
 	buf = append(buf, err...)
 	return appendCRLF(buf)
 }
 
-func AppendInt(buf []byte, n int64) []byte {
+func appendInt(buf []byte, n int64) []byte {
 	buf = append(buf, Integer)
 	buf = strconv.AppendInt(buf, n, 10)
 	return appendCRLF(buf)
 }
 
-func AppendArray(buf []byte, n int) []byte {
+func appendArray(buf []byte, n int) []byte {
 	buf = append(buf, Array)
 	buf = strconv.AppendInt(buf, int64(n), 10)
 	return appendCRLF(buf)
 }
-func AppendNullArray(buf []byte) []byte {
+func appendNullArray(buf []byte) []byte {
 	return append(buf, Array, '-', '1', '\r', '\n')
 }
-func AppendNullBulkString(buf []byte) []byte {
+func appendNullBulkString(buf []byte) []byte {
 	return append(buf, BulkString, '-', '1', '\r', '\n')
 }
-func AppendBulkStringArray(buf []byte, values ...string) []byte {
-	buf = AppendArray(buf, len(values))
+func appendBulkStringArray(buf []byte, values ...string) []byte {
+	buf = appendArray(buf, len(values))
 	for _, s := range values {
-		buf = AppendBulkString(buf, s)
+		buf = appendBulkString(buf, s)
 	}
 	return buf
 }
 
-func AppendIntArray(buf []byte, values ...int64) []byte {
-	buf = AppendArray(buf, len(values))
+func appendIntArray(buf []byte, values ...int64) []byte {
+	buf = appendArray(buf, len(values))
 	for _, n := range values {
-		buf = AppendInt(buf, n)
+		buf = appendInt(buf, n)
 	}
 	return buf
 }
