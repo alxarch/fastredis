@@ -8,8 +8,8 @@ import (
 )
 
 func Test_Pool(t *testing.T) {
-	pool, err := NewPool("redis://:6379")
-	if err != nil {
+	pool := new(Pool)
+	if err := pool.ParseURL("redis://:6379"); err != nil {
 		t.Fatalf("Unexpected error: %s", err)
 	}
 	conn, err := pool.Get(time.Time{})

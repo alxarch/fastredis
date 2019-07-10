@@ -15,26 +15,7 @@ import (
 	"github.com/alxarch/fastredis/resp"
 )
 
-// // DefaultPoolOptions returns the default options for a PoolObject
-// func DefaultPoolOptions() PoolOptions {
-// 	return PoolOptions{
-// 		ReadBufferSize:    8192,
-// 		ReadTimeout:       5 * time.Second,
-// 		WriteTimeout:      5 * time.Second,
-// 		MaxConnections:    8,
-// 		MaxIdleTime:       time.Minute,
-// 		MaxConnectionAge:  10 * time.Minute,
-// 		ClockFrequency:    100 * time.Millisecond,
-// 		CheckIdleInterval: 10 * time.Second,
-// 	}
-// }
-
-type PoolStats struct {
-	Hits     uint32
-	Misses   uint32
-	Timeouts uint32
-}
-
+// Pool is a pool of redis connections
 type Pool struct {
 	noCopy
 
@@ -53,49 +34,69 @@ type Pool struct {
 
 	mu        sync.Mutex
 	cond      sync.Cond
+	active    int
 	closed    bool
 	idle      []*Conn
 	closeChan chan struct{}
-	clock     int64
+	ts        int64
 
 	stats PoolStats
-}
-
-func defaultDial(addr string) (net.Conn, error) {
-	return net.Dial("tcp", addr)
 }
 
 func NewPool(configURL string) (*Pool, error) {
 	pool := Pool{
 		Dial:              defaultDial,
 		CheckIdleInterval: 10 * time.Second,
-		ReadBufferSize:    8192,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
-		MaxConnections:    8,
-		MaxIdleTime:       time.Minute,
-		MaxConnectionAge:  10 * time.Minute,
+		// ReadBufferSize:    8192,
+		// ReadTimeout:       5 * time.Second,
+		// WriteTimeout:      5 * time.Second,
+		MaxConnections:   8,
+		MaxIdleTime:      time.Minute,
+		MaxConnectionAge: 10 * time.Minute,
 	}
-	if err := pool.parseURL(configURL); err != nil {
+	if err := pool.ParseURL(configURL); err != nil {
 		return nil, err
 	}
-	return &pool, pool.Start()
+	return &pool, nil
+}
+
+// Get gets  a connection from the pool
+func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
+	for {
+		if n := atomic.LoadInt32(&pool.numIdle); n > 0 {
+			if atomic.CompareAndSwapInt32(&pool.numIdle, n, n-1) {
+				return pool.get(deadline.UnixNano())
+			}
+		} else if n < 0 {
+			return nil, errPoolClosed
+		} else {
+			break
+		}
+	}
+	max := pool.maxConnections()
+	for {
+		if n := atomic.LoadInt32(&pool.numOpen); 0 <= n && n < max {
+			if atomic.CompareAndSwapInt32(&pool.numOpen, n, n+1) {
+				go pool.dial(pool.Address)
+				break
+			}
+		} else if n < 0 {
+			return nil, errPoolClosed
+		} else {
+			break
+		}
+	}
+	return pool.get(deadline.UnixNano())
+}
+
+func defaultDial(addr string) (net.Conn, error) {
+	return net.Dial("tcp", addr)
 }
 
 type noCopy struct{}
 
 func (noCopy) Lock()   {}
 func (noCopy) Unlock() {}
-
-func (pool *Pool) Start() error {
-	if pool.closeChan != nil {
-		return Err(`Alreadyy started`)
-	}
-	pool.closeChan = make(chan struct{})
-	pool.cond.L = &pool.mu
-	go pool.runCleaner()
-	return nil
-}
 
 func (pool *Pool) Clean() (int, error) {
 	size := atomic.LoadInt32(&pool.numIdle)
@@ -105,6 +106,10 @@ func (pool *Pool) Clean() (int, error) {
 }
 
 func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
+	maxIdleTime := pool.MaxIdleTime
+	if maxIdleTime <= 0 {
+		maxIdleTime = time.Hour
+	}
 	pool.mu.Lock()
 	if pool.closed {
 		pool.mu.Unlock()
@@ -112,7 +117,7 @@ func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
 	}
 	i := 0
 	idle := pool.idle
-	for 0 <= i && i < len(idle) && now.Sub(idle[i].lastUsedAt) > pool.MaxIdleTime {
+	for 0 <= i && i < len(idle) && now.Sub(idle[i].lastUsedAt) > maxIdleTime {
 		i++
 	}
 	if i == 0 {
@@ -120,6 +125,8 @@ func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
 		return 0, nil
 	}
 	*scratch = append((*scratch)[:0], idle[:i]...)
+	// Decrement active count while under lock
+	pool.active -= i
 	j := copy(pool.idle, idle[i:])
 	if len(pool.idle) > j {
 		for i := range pool.idle[j:] {
@@ -127,6 +134,10 @@ func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
 		}
 		pool.idle = pool.idle[:j]
 	}
+	if len(pool.idle) == 0 {
+		pool.cond.L = nil
+	}
+
 	pool.mu.Unlock()
 	atomic.StoreInt32(&pool.numIdle, int32(j))
 	tmp := *scratch
@@ -139,11 +150,11 @@ func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
 	return n, nil
 }
 
-func (pool *Pool) Stop() {
+func (pool *Pool) Close() error {
 	pool.mu.Lock()
 	if pool.closed {
 		pool.mu.Unlock()
-		return
+		return errPoolClosed
 	}
 	pool.closed = true
 	atomic.StoreInt32(&pool.numIdle, math.MinInt32)
@@ -153,9 +164,13 @@ func (pool *Pool) Stop() {
 		c.closeWithError(errPoolClosed)
 	}
 	pool.idle = pool.idle[:0]
-	close(pool.closeChan)
+	if ch := pool.closeChan; ch != nil {
+		pool.closeChan = nil
+		close(ch)
+	}
 	pool.cond.Broadcast()
 	pool.mu.Unlock()
+	return nil
 }
 
 // const poolClockInterval = 100 * time.Millisecond
@@ -199,12 +214,13 @@ func (pool *Pool) dial(addr string) {
 }
 
 func (pool *Pool) runCleaner() {
-	interval := pool.MaxIdleTime
+	interval := pool.CheckIdleInterval
 	if interval < time.Second {
 		interval = time.Second
 	}
 	var scratch []*Conn
 	tick := time.NewTicker(interval)
+	defer tick.Stop()
 	for {
 		select {
 		case <-pool.closeChan:
@@ -216,37 +232,14 @@ func (pool *Pool) runCleaner() {
 	}
 }
 
-// func (pool *Pool) setClock(t time.Time) {
-// 	n := t.UnixNano()
-// 	pool.mu.Lock()
-// 	pool.clock = n
-// 	if len(pool.idle) == 0 {
-// 		pool.cond.Broadcast()
-// 	}
-// 	pool.mu.Unlock()
-
-// }
-// func (pool *Pool) runClock() {
-// 	pool.setClock(time.Now())
-// 	tick := time.NewTicker(poolClockInterval)
-// 	for {
-// 		select {
-// 		case <-pool.closeChan:
-// 			tick.Stop()
-// 			return
-// 		case now := <-tick.C:
-// 			pool.setClock(now)
-// 		}
-// 	}
-// }
-
 // pool of *Conn objects
 var connPool sync.Pool
 
 func (pool *Pool) closeConn(c *Conn) {
-	c.conn.Close()
+	conn := c.conn
 	c.conn = nil
-	c.r.Reset(c)
+	conn.Close()
+	c.r.Reset(nil)
 	c.err = nil
 	connPool.Put(c)
 	for {
@@ -277,22 +270,35 @@ func (pool *Pool) Put(c *Conn) {
 }
 
 func (pool *Pool) put(c *Conn) {
-	c.lastUsedAt = time.Now()
-	n := c.lastUsedAt.UnixNano()
+	// c.lastUsedAt = time.Now()
+	run := false
+	ts := c.lastUsedAt.UnixNano()
+	isNew := c.IsNew()
 	pool.mu.Lock()
 	if pool.closed {
 		pool.mu.Unlock()
 		pool.closeConn(c)
 		return
 	}
-	pool.clock = n
+	pool.ts = ts
+	if isNew {
+		pool.active++
+	}
+
 	pool.idle = append(pool.idle, c)
+	if pool.closeChan == nil {
+		pool.closeChan = make(chan struct{})
+		run = true
+	}
 	if pool.cond.L == nil {
 		pool.cond.L = &pool.mu
 	}
 	pool.cond.Signal()
 	pool.mu.Unlock()
 	atomic.AddInt32(&pool.numIdle, 1)
+	if run {
+		go pool.runCleaner()
+	}
 }
 
 func (pool *Pool) get(deadline int64) (conn *Conn, err error) {
@@ -305,11 +311,14 @@ func (pool *Pool) get(deadline int64) (conn *Conn, err error) {
 			err = errPoolClosed
 			return
 		}
-		if 0 < deadline && deadline < pool.clock {
+		if 0 < deadline && deadline < pool.ts {
 			pool.mu.Unlock()
 			atomic.AddUint32(&pool.stats.Timeouts, 1)
 			err = errDeadlineExceeded
 			return
+		}
+		if pool.cond.L == nil {
+			pool.cond.L = &pool.mu
 		}
 		pool.cond.Wait()
 	}
@@ -343,35 +352,6 @@ func (pool *Pool) maxConnections() int32 {
 	return max
 }
 
-// Get gets an empty connection from the pool
-func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
-	for {
-		if n := atomic.LoadInt32(&pool.numIdle); n > 0 {
-			if atomic.CompareAndSwapInt32(&pool.numIdle, n, n-1) {
-				return pool.get(deadline.UnixNano())
-			}
-		} else if n < 0 {
-			return nil, errPoolClosed
-		} else {
-			break
-		}
-	}
-	max := pool.maxConnections()
-	for {
-		if n := atomic.LoadInt32(&pool.numOpen); 0 <= n && n < max {
-			if atomic.CompareAndSwapInt32(&pool.numOpen, n, n+1) {
-				go pool.dial(pool.Address)
-				break
-			}
-		} else if n < 0 {
-			return nil, errPoolClosed
-		} else {
-			break
-		}
-	}
-	return pool.get(deadline.UnixNano())
-}
-
 func (pool *Pool) Do(p *Pipeline, r *resp.Reply) error {
 	conn, err := pool.Get(time.Time{})
 	if err != nil {
@@ -383,7 +363,7 @@ func (pool *Pool) Do(p *Pipeline, r *resp.Reply) error {
 }
 
 // ParseURL parses a URL to PoolOptions
-func (pool *Pool) parseURL(rawurl string) (err error) {
+func (pool *Pool) ParseURL(rawurl string) (err error) {
 	if rawurl == "" {
 		return
 	}
@@ -439,11 +419,12 @@ func (pool *Pool) parseURL(rawurl string) (err error) {
 			pool.CheckIdleInterval = d
 		}
 	}
-	// if v, ok := q["clock-frequency"]; ok && len(v) > 0 {
-	// 	if d, _ := time.ParseDuration(v[0]); d > 0 {
-	// 		pool.ClockFrequency = d
-	// 	}
-	// }
 
 	return
+}
+
+type PoolStats struct {
+	Hits     uint32
+	Misses   uint32
+	Timeouts uint32
 }

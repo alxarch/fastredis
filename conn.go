@@ -17,6 +17,10 @@ type Conn struct {
 	options    *ConnOptions
 }
 
+func (c *Conn) IsNew() bool {
+	return c.createdAt.Equal(c.lastUsedAt)
+}
+
 type ConnOptions struct {
 	ReadBufferSize int
 	ReadTimeout    time.Duration
