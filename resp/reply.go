@@ -13,6 +13,7 @@ type Reply struct {
 	n      int // number of read values
 }
 
+// ParseValue parses a RESP value from a buffer
 func ParseValue(b []byte) (Value, error) {
 	rep := new(Reply)
 	r := bytes.NewReader(b)

@@ -33,6 +33,7 @@ func (p *Pipeline) do(cmd string, args ...resp.Arg) {
 	p.Buffer.Arg(args...)
 }
 
+// Command starts a new command with n number of args
 func (p *Pipeline) Command(cmd string, numArgs int) {
 	p.Buffer.Array(numArgs + 1)
 	p.Buffer.BulkString(cmd)
@@ -41,6 +42,7 @@ func (p *Pipeline) Command(cmd string, numArgs int) {
 
 var pipelinePool sync.Pool
 
+// BlankPipeline gets a blank pipeline from the pool
 func BlankPipeline() *Pipeline {
 	x := pipelinePool.Get()
 	if x == nil {
@@ -49,7 +51,7 @@ func BlankPipeline() *Pipeline {
 	return x.(*Pipeline)
 }
 
-// ReleasePipieline resets and returns the pipeline to the pool
+// ReleasePipeline resets and returns the pipeline to the pool
 func ReleasePipeline(p *Pipeline) {
 	if p != nil {
 		p.Reset()

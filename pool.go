@@ -400,17 +400,22 @@ func (pool *Pool) ParseURL(rawurl string) (err error) {
 	return
 }
 
+// Idle returns the number of idle connections
 func (pool *Pool) Idle() int {
 	return int(atomic.LoadInt32(&pool.numIdle))
 }
+
+// Open returns the number of open connections
 func (pool *Pool) Open() int {
 	return int(atomic.LoadInt32(&pool.numOpen))
 }
 
+// PoolStats counts pool statistics
 type PoolStats struct {
 	Hits, Misses, Timeouts int64
 }
 
+// Stats returns current pool statistics
 func (pool *Pool) Stats() PoolStats {
 	return PoolStats{
 		Hits:     atomic.LoadInt64(&pool.hits),

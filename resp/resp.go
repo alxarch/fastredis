@@ -25,6 +25,7 @@ func (e ProtocolError) String() string {
 	return string(e)
 }
 
+// ReadBulkString appends a RESP bulk string from a reader to a buffer
 func ReadBulkString(buf []byte, size int64, r *bufio.Reader) ([]byte, error) {
 	switch {
 	case 0 < size && size <= int64(r.Size()):
@@ -109,6 +110,7 @@ btoi:
 	return n, nil
 }
 
+// Discard discards a value from a reader
 func Discard(r *bufio.Reader) error {
 	c, err := r.ReadByte()
 	if err != nil {
@@ -208,8 +210,4 @@ func appendIntArray(buf []byte, values ...int64) []byte {
 		buf = appendInt(buf, n)
 	}
 	return buf
-}
-
-type Appender interface {
-	AppendRESP(buf []byte) []byte
 }

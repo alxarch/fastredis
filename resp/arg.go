@@ -64,6 +64,7 @@ func Bool(b bool) Arg {
 	return Arg{typ: typFalse}
 }
 
+// KV is a pair of key value
 type KV struct {
 	Key string
 	Arg

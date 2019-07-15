@@ -10,6 +10,7 @@ import (
 	"github.com/alxarch/fastredis/resp"
 )
 
+// Conn is a connectio to a Redis server
 type Conn struct {
 	conn       net.Conn
 	r          *bufio.Reader
@@ -19,6 +20,7 @@ type Conn struct {
 	options    *ConnOptions
 }
 
+// ConnOptions holds connection options
 type ConnOptions struct {
 	ReadBufferSize int
 	ReadTimeout    time.Duration

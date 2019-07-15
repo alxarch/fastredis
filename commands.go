@@ -44,6 +44,7 @@ func (p *Pipeline) SwapDB(i, j int64) {
 
 // Hashes
 
+// HDel deletes one or more hash fields
 func (p *Pipeline) HDel(key string, fields ...string) {
 	p.Command("HDEL", len(fields))
 	p.Arg(resp.Key(key))
@@ -51,27 +52,43 @@ func (p *Pipeline) HDel(key string, fields ...string) {
 		p.Arg(resp.String(f))
 	}
 }
+
+// HExists determines if a hash field exists
 func (p *Pipeline) HExists(key string, field string) {
 	p.do("HEXISTS", resp.Key(key), resp.String(field))
 }
+
+// HGet gets the value of a hash field
 func (p *Pipeline) HGet(key, field string) {
 	p.do("HSET", resp.Key(key), resp.String(field))
 }
+
+// HGetAll gets all the fields and values in a hash
 func (p *Pipeline) HGetAll(key string) {
 	p.do("HGETALL", resp.Key(key))
 }
+
+// HIncrBy increments the integer value of a hash field by the given number
 func (p *Pipeline) HIncrBy(key, field string, n int64) {
 	p.do("HINCRBY", resp.Key(key), resp.String(field), resp.Int(n))
 }
+
+// HIncrByFloat increments the float value of a hash field by the given amount
 func (p *Pipeline) HIncrByFloat(key, field string, f float64) {
 	p.do("HINCRBYFLOAT", resp.Key(key), resp.String(field), resp.Float(f))
 }
+
+// HKeys gets all the fields in a hash
 func (p *Pipeline) HKeys(key string) {
 	p.do("HKEYS", resp.Key(key))
 }
+
+// HLen gets the number of fields in a hash
 func (p *Pipeline) HLen(key string) {
 	p.do("HLEN", resp.Key(key))
 }
+
+// HMGet gets the values of all the the given hash fields
 func (p *Pipeline) HMGet(key string, fields ...string) {
 	p.Command("HMGET", 1+len(fields))
 	p.Arg(resp.Key(key))
@@ -79,6 +96,8 @@ func (p *Pipeline) HMGet(key string, fields ...string) {
 		p.Arg(resp.String(f))
 	}
 }
+
+// HMSet sets multiple hash fields to multiple values
 func (p *Pipeline) HMSet(key string, values ...resp.KV) {
 	p.Command("HMSET", 1+2*len(values))
 	p.Arg(resp.Key(key))
@@ -89,18 +108,27 @@ func (p *Pipeline) HMSet(key string, values ...resp.KV) {
 	}
 }
 
+// HSet sets the value of a hash field
 func (p *Pipeline) HSet(key, field string, value resp.Arg) {
 	p.do("HSET", resp.Key(key), resp.String(field), value)
 }
+
+// HSetNX sets the value of a hash field, only if the field does not exist
 func (p *Pipeline) HSetNX(key, field string, value resp.Arg) {
 	p.do("HSETNX", resp.Key(key), resp.String(field), value)
 }
+
+// HStrLen gets the length of the value of a hash field
 func (p *Pipeline) HStrLen(key, field string) {
 	p.do("HSTRLEN", resp.Key(key), resp.String(field))
 }
+
+// HVals get all the values in a hash
 func (p *Pipeline) HVals(key string) {
 	p.do("HVALS", resp.Key(key))
 }
+
+// HScan incrementally iterates hash fields and associated values
 func (p *Pipeline) HScan(key string, cur int64, match string, count int64) {
 	if count <= 0 {
 		count = defaultScanCount
@@ -113,6 +141,8 @@ func (p *Pipeline) HScan(key string, cur int64, match string, count int64) {
 }
 
 // HyperLogLog
+
+// PFAdd adds the specified elements to the specified HyperLogLog
 func (p *Pipeline) PFAdd(key string, elements ...string) {
 	p.Command("PFADD", 1+len(elements))
 	p.Arg(resp.Key(key))
@@ -120,12 +150,16 @@ func (p *Pipeline) PFAdd(key string, elements ...string) {
 		p.Arg(resp.String(el))
 	}
 }
+
+// PFCount returns the approximate cardinality of the set
 func (p *Pipeline) PFCount(keys ...string) {
 	p.Command("PFCOUNT", len(keys))
 	for _, k := range keys {
 		p.Arg(resp.Key(k))
 	}
 }
+
+// PFMerge merges different HyperLoglLogs into a single one
 func (p *Pipeline) PFMerge(dest string, src ...string) {
 	p.Command("PFMERGE", 1+len(src))
 	p.Arg(resp.Key(dest))
@@ -136,6 +170,7 @@ func (p *Pipeline) PFMerge(dest string, src ...string) {
 
 // Keys
 
+// Del deletes a key
 func (p *Pipeline) Del(keys ...string) {
 	p.Command("DEL", len(keys))
 	for _, key := range keys {
@@ -143,10 +178,12 @@ func (p *Pipeline) Del(keys ...string) {
 	}
 }
 
+// Dump returns a serialized version of the value stored at key
 func (p *Pipeline) Dump(key string) {
 	p.do("DUMP", resp.Key(key))
 }
 
+// Exists determines if a key exists
 func (p *Pipeline) Exists(keys ...string) {
 	p.Command("EXISTS", len(keys))
 	for _, key := range keys {
@@ -154,15 +191,18 @@ func (p *Pipeline) Exists(keys ...string) {
 	}
 }
 
+// Expire sets a key's time to live
 func (p *Pipeline) Expire(key string, ttl time.Duration) {
 	p.do("PEXPIRE", resp.Key(key), resp.Int(int64(ttl/time.Millisecond)))
 }
 
+// ExpireAt sets the expiration time for a key as a UNIX timestamp
 func (p *Pipeline) ExpireAt(key string, tm time.Time) {
 	ms := tm.UnixNano() / int64(time.Millisecond)
 	p.do("PEXPIREAT", resp.Key(key), resp.Int(ms))
 }
 
+// Keys finds all keys matching the given pattern
 func (p *Pipeline) Keys(pattern string) {
 	if pattern == "" {
 		pattern = "*"
@@ -170,6 +210,7 @@ func (p *Pipeline) Keys(pattern string) {
 	p.do("KEYS", resp.String(pattern))
 }
 
+// Migrate options
 type Migrate struct {
 	Host    string
 	Port    string
@@ -179,6 +220,7 @@ type Migrate struct {
 	Replace bool
 }
 
+// Migrate atomically transfers a key from a redis instance to another one
 func (p *Pipeline) Migrate(m Migrate, keys ...string) {
 	args := []resp.Arg{
 		resp.String(m.Host),
@@ -201,24 +243,37 @@ func (p *Pipeline) Migrate(m Migrate, keys ...string) {
 	p.do("MIGRATE", args...)
 }
 
+// Move moves a key to another database
 func (p *Pipeline) Move(key string, db int64) {
 	p.do("MOVE", resp.Key(key), resp.Int(db))
 }
+
+// Persist removes the expiration from a key
 func (p *Pipeline) Persist(key string) {
 	p.do("PERSIST", resp.Key(key))
 }
+
+// PTTL gets the time to live for a key in milliseconds
 func (p *Pipeline) PTTL(key string) {
 	p.do("PTTL", resp.Key(key))
 }
+
+// RandomKey returns a random key from the keyspace
 func (p *Pipeline) RandomKey() {
 	p.do("RANDOMKEY")
 }
+
+// Rename renames a key
 func (p *Pipeline) Rename(key, newkey string) {
 	p.do("RENAME", resp.Key(key), resp.Key(newkey))
 }
+
+// RenameNX renames a key only if the new key does not exist
 func (p *Pipeline) RenameNX(key, newkey string) {
 	p.do("RENAMENX", resp.Key(key), resp.Key(newkey))
 }
+
+// Restore creates a key using the provided serialized value, previously obtained using DUMP
 func (p *Pipeline) Restore(key string, ttl time.Duration, data []byte, replace bool, idletime int64, frequency int64) {
 	args := []resp.Arg{
 		resp.Key(key),
@@ -237,6 +292,7 @@ func (p *Pipeline) Restore(key string, ttl time.Duration, data []byte, replace b
 	p.do("RESTORE", args...)
 }
 
+// Sort options for SORT command
 type Sort struct {
 	By            string
 	Offset, Count int64
@@ -246,6 +302,7 @@ type Sort struct {
 	Store         string
 }
 
+// Sort sorts the elements in a list, set or sorted set
 func (p *Pipeline) Sort(key string, options Sort) {
 	args := []resp.Arg{
 		resp.Key(key),
@@ -270,6 +327,7 @@ func (p *Pipeline) Sort(key string, options Sort) {
 
 }
 
+// Touch alters the last access time of a key
 func (p *Pipeline) Touch(keys ...string) {
 	p.Command("TOUCH", len(keys))
 	for _, key := range keys {
@@ -277,24 +335,32 @@ func (p *Pipeline) Touch(keys ...string) {
 	}
 }
 
+// TTL gets the time to live for a key in seconds
 func (p *Pipeline) TTL(key string) {
 	p.do("TTL", resp.Key(key))
 }
+
+// Type determines the type stored at key
 func (p *Pipeline) Type(key string) {
 	p.do("TYPE", resp.Key(key))
 }
+
+// Unlink deletes a key asyncronously in another thread.
 func (p *Pipeline) Unlink(keys ...string) {
 	p.Command("UNLINK", len(keys))
 	for _, key := range keys {
 		p.Arg(resp.Key(key))
 	}
 }
+
+// Wait waits for the synchronous replication of all the write commands sent in the context of the current connection
 func (p *Pipeline) Wait(replicas int64, timeout time.Duration) {
 	p.do("WAIT", resp.Int(replicas), resp.Int(int64(timeout/time.Second)))
 }
 
 const defaultScanCount = 10
 
+// Scan incrementally iterates the keyspace
 func (p *Pipeline) Scan(cur int64, match string, count int64) {
 	if count <= 0 {
 		count = defaultScanCount
@@ -315,6 +381,7 @@ func (p *Pipeline) BLPop(timeout time.Duration, keys ...string) {
 	}
 	p.Arg(resp.Int(int64(timeout / time.Second)))
 }
+
 func (p *Pipeline) BRPop(timeout time.Duration, keys ...string) {
 	p.Command("BRPOP", 1+len(keys))
 	for _, key := range keys {
@@ -380,6 +447,7 @@ func (p *Pipeline) RPushX(key string, value resp.Arg) {
 
 // Scripting
 
+// Eval executes a Lua script server side
 func (p *Pipeline) Eval(script string, keysAndArgs ...resp.Arg) {
 	p.Command("EVAL", len(keysAndArgs)+2) // Script + NumKeys
 	p.Arg(resp.String(script))
@@ -390,6 +458,7 @@ func (p *Pipeline) Eval(script string, keysAndArgs ...resp.Arg) {
 	}
 }
 
+// EvalSHA executes a cached Lua script server side
 func (p *Pipeline) EvalSHA(sha1 string, keysAndArgs ...resp.Arg) {
 	p.Command("EVALSHA", len(keysAndArgs)+2)
 	p.Arg(resp.String(sha1))
@@ -409,6 +478,7 @@ func splitKeysArgs(keysAndArgs []resp.Arg) (keys, args []resp.Arg) {
 	return keysAndArgs, nil
 }
 
+// ScriptExists checks existence of scripts in the script cache
 func (p *Pipeline) ScriptExists(sha1 ...string) {
 	p.Command("SCRIPT", 1+len(sha1))
 	p.BulkString("EXISTS")
@@ -416,9 +486,13 @@ func (p *Pipeline) ScriptExists(sha1 ...string) {
 		p.BulkString(s)
 	}
 }
+
+// ScriptDebugSync sets the debug mode for executed scripts to SYNC
 func (p *Pipeline) ScriptDebugSync() {
 	p.do("SCRIPT", resp.String("DEBUG"), resp.String("SYNC"))
 }
+
+// ScriptDebug sets the debug mode for executed scripts to YES/NO
 func (p *Pipeline) ScriptDebug(debug bool) {
 	if debug {
 		p.do("SCRIPT", resp.String("DEBUG"), resp.String("YES"))
@@ -427,12 +501,17 @@ func (p *Pipeline) ScriptDebug(debug bool) {
 	}
 }
 
+// ScriptFlush removes all the scripts from the script cache
 func (p *Pipeline) ScriptFlush() {
 	p.do("SCRIPT", resp.String("FLUSH"))
 }
+
+// ScriptKill kills the script currently in execution
 func (p *Pipeline) ScriptKill() {
 	p.do("SCRIPT", resp.String("KILL"))
 }
+
+// ScriptLoad loads the specified Lua script into the script cache
 func (p *Pipeline) ScriptLoad(script string) {
 	p.do("SCRIPT", resp.String("LOAD"), resp.String(script))
 }
@@ -542,21 +621,82 @@ func (p *Pipeline) SScan(key string, cur int64, match string, count int64) {
 }
 
 // Sorted Sets
-func (p *Pipeline) ZAdd(key string, members ...resp.Arg) {
-	p.Command("ZADD", 1+len(members))
-	p.Arg(resp.Key(key))
-	p.Arg(members...)
+
+// ZMember is a score/value pair
+type ZMember struct {
+	Score  float64
+	Member string
 }
 
+// Z creates a new ZMember
+func Z(score float64, member string) ZMember {
+	return ZMember{Score: score, Member: member}
+}
+
+// SetMode determines the update mode for SET command
+type SetMode uint
+
+// SetMode enum
+const (
+	_ SetMode = iota
+	NX
+	XX
+)
+
+// ZAdd adds score/value pairs to a sorted set
+func (p *Pipeline) ZAdd(key string, add SetMode, changed bool, members ...ZMember) {
+	numArgs := 1
+	switch add {
+	case NX, XX:
+		numArgs++
+
+	}
+	if changed {
+		numArgs++
+	}
+	numArgs += 2 * len(members)
+	p.Command("ZADD", numArgs)
+	p.Arg(resp.Key(key))
+	switch add {
+	case NX:
+		p.BulkString("NX")
+	case XX:
+		p.BulkString("XX")
+	}
+	if changed {
+		p.BulkString("CH")
+	}
+	for i := range members {
+		m := &members[i]
+		p.Arg(resp.Float(m.Score), resp.String(m.Member))
+	}
+}
+
+// ZCard gets the number of members in a sorted set
 func (p *Pipeline) ZCard(key string) {
 	p.do("ZCARD", resp.Key(key))
 }
+
+// ZCount counts the number of members in a sorted set with scores within the given values
 func (p *Pipeline) ZCount(key string, min, max float64) {
 	p.do("ZCOUNT", resp.Key(key), resp.Float(min), resp.Float(max))
 }
+
+// ZIncrBy increments the score of a member in a sorted set
 func (p *Pipeline) ZIncrBy(key string, inc float64, member string) {
 	p.do("ZINCRBY", resp.Key(key), resp.Float(inc), resp.String(member))
 }
+
+// ZIncrByNX increments the score of a member in a sorted set, only if the member does not exist in the set
+func (p *Pipeline) ZIncrByNX(key string, inc float64, member string) {
+	p.do("ZADD", resp.Key(key), resp.String("NX"), resp.String("INCR"), resp.Float(inc), resp.String(member))
+}
+
+// ZIncrByXX increments the score of a member in a sorted set, only if the member already exists in the set
+func (p *Pipeline) ZIncrByXX(key string, inc float64, member string) {
+	p.do("ZADD", resp.Key(key), resp.String("XX"), resp.String("INCR"), resp.Float(inc), resp.String(member))
+}
+
 func (p *Pipeline) zstore(cmd string, dest string, keysAndWeights ...resp.Arg) {
 	keys, weights := splitKeysArgs(keysAndWeights)
 	if len(weights) > 0 {
@@ -572,12 +712,18 @@ func (p *Pipeline) zstore(cmd string, dest string, keysAndWeights ...resp.Arg) {
 	p.Arg(keys...)
 
 }
+
+// ZInterStore intersects multiple sorted sets and stores the resulting sorted set in a new key
 func (p *Pipeline) ZInterStore(dest string, keysAndWeights ...resp.Arg) {
 	p.zstore("ZINTERSTORE", dest, keysAndWeights...)
 }
+
+// ZLexCount counts the number of members in a sorted set between a given lexicographical range
 func (p *Pipeline) ZLexCount(key, min, max string) {
 	p.do("ZLEXCOUNT", resp.Key(key), resp.String(min), resp.String(max))
 }
+
+// ZPopMax removes and returns members with the highest scores in a sorted set
 func (p *Pipeline) ZPopMax(key string, count int64) {
 	if count > 0 {
 		p.do("ZPOPMAX", resp.Key(key), resp.Int(count))
@@ -585,6 +731,8 @@ func (p *Pipeline) ZPopMax(key string, count int64) {
 		p.do("ZPOPMAX", resp.Key(key))
 	}
 }
+
+// ZPopMin removes and returns members with the lowest scores in a sorted set
 func (p *Pipeline) ZPopMin(key string, count int64) {
 	if count > 0 {
 		p.do("ZPOPMIN", resp.Key(key), resp.Int(count))
@@ -592,6 +740,8 @@ func (p *Pipeline) ZPopMin(key string, count int64) {
 		p.do("ZPOPMIN", resp.Key(key))
 	}
 }
+
+// ZRange returns a range of members in a sorted set, by index
 func (p *Pipeline) ZRange(key string, start, stop int64, scores bool) {
 	if scores {
 		p.do("ZRANGE", resp.Key(key), resp.Int(start), resp.Int(stop), resp.String("WITHSCORES"))
@@ -600,6 +750,8 @@ func (p *Pipeline) ZRange(key string, start, stop int64, scores bool) {
 
 	}
 }
+
+// ZRangeByLex returns a range of members in a sorted set, by lexicographical range
 func (p *Pipeline) ZRangeByLex(key, min, max string, offset, count int64) {
 	args := []resp.Arg{
 		resp.Key(key),
@@ -619,6 +771,8 @@ func limit(args []resp.Arg, offset, count int64) []resp.Arg {
 		resp.Int(count),
 	)
 }
+
+// ZRangeByScore returns a range of members in a sorted set, by score
 func (p *Pipeline) ZRangeByScore(key string, min, max float64, scores bool, offset, count int64) {
 	args := []resp.Arg{
 		resp.Key(key),
@@ -632,33 +786,50 @@ func (p *Pipeline) ZRangeByScore(key string, min, max float64, scores bool, offs
 	p.do("ZRANGEBYSCORE", args...)
 
 }
+
+// ZRank determines the index of a member in a sorted set
 func (p *Pipeline) ZRank(key, member string) {
 	p.do("ZRANK", resp.Key(key), resp.String(member))
 }
+
+// ZRem removes one or more members from a sorted set
 func (p *Pipeline) ZRem(key string, members ...resp.Arg) {
 	p.Command("ZREM", 1+len(members))
 	p.Arg(resp.Key(key))
 	p.Arg(members...)
 }
+
+// ZRemRangeByLex removes a range of members in a sorted set, between the given lexicographical range
 func (p *Pipeline) ZRemRangeByLex(key, min, max string) {
 	p.do("ZREMRANGEBYLEX", resp.Key(key), resp.String(min), resp.String(max))
 }
+
+// ZRemRangeByRank removes a range of members in a sorted set, within the given indexes
 func (p *Pipeline) ZRemRangeByRank(key string, start, stop int64) {
 	p.do("ZREMRANGEBYRANK", resp.Key(key), resp.Int(start), resp.Int(stop))
 }
+
+// ZRemRangeByScore removes a range of members in a sorted set, within the given scores
 func (p *Pipeline) ZRemRangeByScore(key string, min, max float64) {
 	p.do("ZREMRANGEBYSCORE", resp.Key(key), resp.Float(min), resp.Float(max))
 }
+
+// ZRevRank determines the index of a member in a sorted set, with scores ordered from high to low
 func (p *Pipeline) ZRevRank(key, member string) {
 	p.do("ZREVRANK", resp.Key(key), resp.String(member))
 }
+
+// ZScore gets the score associated with the given member in a sorted set
 func (p *Pipeline) ZScore(key, member string) {
 	p.do("ZSCORE", resp.Key(key), resp.String(member))
 }
+
+// ZUnionStore adds multiple sorted sets and stores the resulting sorted set in a new key
 func (p *Pipeline) ZUnionStore(dest string, keysAndWeights ...resp.Arg) {
 	p.zstore("ZUNIONSTORE", dest, keysAndWeights...)
 }
 
+// ZScan incrementally iterates sorted set's elements and associated scores
 func (p *Pipeline) ZScan(key string, cur int64, match string, count int64) {
 	if count <= 0 {
 		count = defaultScanCount
@@ -791,6 +962,7 @@ func (p *Pipeline) SetXX(key string, value resp.Arg, ttl time.Duration) {
 func (p *Pipeline) SetRange(key string, offset int64, value resp.Arg) {
 	p.do("SETRANGE", resp.Key(key), resp.Int(offset), value)
 }
+
 func (p *Pipeline) StrLen(key string) {
 	p.do("STRLEN", resp.Key(key))
 }
