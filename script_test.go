@@ -16,11 +16,11 @@ func TestScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.String() != `da95252e2c27e41cd53b9114f28b4ba84e7d64d4` {
+	if s != `da95252e2c27e41cd53b9114f28b4ba84e7d64d4` {
 		t.Errorf("Invalid SHA1: %s", s)
 	}
 	p := BlankPipeline()
-	defer p.Close()
+	defer ReleasePipeline(p)
 	r := BlankReply()
 	defer ReleaseReply(r)
 	p.EvalSHA(s, resp.Key("foo"), resp.Key("bar"), resp.String("bar"), resp.String("baz"))
@@ -46,8 +46,8 @@ func TestScript(t *testing.T) {
 				return
 			}
 		}
-		t.Errorf("Invalid value: %s %s", k, v.Bytes())
-		t.Errorf("%s, %s", k, v.Bytes())
+		t.Errorf("Invalid value: %s %q", k, string(v.Bytes()))
+		t.Errorf("%s, %s", k, string(v.Bytes()))
 	})
 
 }

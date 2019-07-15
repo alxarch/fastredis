@@ -209,3 +209,7 @@ func appendIntArray(buf []byte, values ...int64) []byte {
 	}
 	return buf
 }
+
+type Appender interface {
+	AppendRESP(buf []byte) []byte
+}

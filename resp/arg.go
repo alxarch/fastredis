@@ -18,6 +18,7 @@ const (
 	typFalse
 )
 
+// Arg is a RESP command argument
 type Arg struct {
 	typ argType
 	str string
@@ -73,6 +74,15 @@ func Pair(key string, arg Arg) KV {
 	return KV{Key: key, Arg: arg}
 }
 
+// IsKey checks if an arg is key
 func (a Arg) IsKey() bool {
 	return a.typ == typKey
+}
+
+// Prefix prepends a prefix to a key argument
+func (a Arg) Prefix(prefix string) Arg {
+	if a.typ == typKey {
+		return Arg{typ: typKey, str: prefix + a.str}
+	}
+	return a
 }

@@ -26,11 +26,6 @@ type Value struct {
 	reply *Reply
 }
 
-// NullValue returns a null value
-func NullValue() Value {
-	return Value{-1, nil}
-}
-
 type value struct {
 	start int
 	end   int
@@ -315,7 +310,7 @@ func (v Value) ForEachKV(fn func(k []byte, v Value)) {
 			}
 		}
 		if k != nil {
-			fn(k.slice(v.reply.buffer), NullValue())
+			fn(k.slice(v.reply.buffer), Null())
 		}
 	}
 

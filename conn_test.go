@@ -12,7 +12,7 @@ func TestConn(t *testing.T) {
 		t.Fatalf(`Dial nil failed: %s`, err)
 	}
 	p := BlankPipeline()
-	defer p.Close()
+	defer ReleasePipeline(p)
 	r := BlankReply()
 	defer ReleaseReply(r)
 	p.Select(10)
@@ -47,7 +47,7 @@ func TestConn(t *testing.T) {
 func BenchmarkPipeline(b *testing.B) {
 	b.ReportAllocs()
 	p := BlankPipeline()
-	defer p.Close()
+	defer ReleasePipeline(p)
 	for i := 0; i < b.N; i++ {
 		p.Reset()
 		p.HIncrBy("foo", "bar", 1)

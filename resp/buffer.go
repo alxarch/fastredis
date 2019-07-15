@@ -3,7 +3,6 @@ package resp
 import (
 	"math"
 	"strconv"
-	"sync"
 )
 
 type Buffer struct {
@@ -15,54 +14,55 @@ func (b *Buffer) Reset() {
 	b.B = b.B[:0]
 }
 
-func (b *Buffer) WriteSimpleString(s string) {
+func (b *Buffer) SimpleString(s string) {
 	b.B = appendSimpleString(b.B, s)
 }
 
-func (b *Buffer) WriteBulkString(s string) {
+func (b *Buffer) BulkString(s string) {
 	b.B = appendBulkString(b.B, s)
 }
-func (b *Buffer) WriteBulkStringRaw(raw []byte) {
-	b.B = appendBulkStringRaw(b.B, raw)
+func (b *Buffer) BulkStringBytes(data []byte) {
+	b.B = appendBulkStringRaw(b.B, data)
 }
-func (b *Buffer) WriteError(err string) {
+func (b *Buffer) Error(err string) {
 	b.B = appendError(b.B, err)
 }
-func (b *Buffer) WriteInt(n int64) {
+func (b *Buffer) Int(n int64) {
 	b.B = appendInt(b.B, n)
 }
-func (b *Buffer) WriteArray(size int) {
+func (b *Buffer) Array(size int) {
 	b.B = appendArray(b.B, size)
 }
-func (b *Buffer) WriteNullArray() {
+func (b *Buffer) NullArray() {
 	b.B = appendNullArray(b.B)
 }
-func (b *Buffer) WriteNullString() {
+func (b *Buffer) NullString() {
 	b.B = appendNullBulkString(b.B)
 }
-func (b *Buffer) WriteBulkStrings(values ...string) {
+func (b *Buffer) BulkStringArray(values ...string) {
 	b.B = appendBulkStringArray(b.B, values...)
 }
-func (b *Buffer) WriteInts(values ...int64) {
+func (b *Buffer) IntArray(values ...int64) {
 	b.B = appendIntArray(b.B, values...)
 }
 
-func (b *Buffer) WriteArgs(args ...Arg) {
+func (b *Buffer) Arg(args ...Arg) {
 	for i := range args {
 		a := &args[i]
-		b.writeArg(a)
+		b.write(a)
 	}
 }
-func (b *Buffer) WriteArgsArray(args ...Arg) {
-	b.WriteArray(len(args))
-	b.WriteArgs(args...)
+func (b *Buffer) ArgArray(args ...Arg) {
+	b.Array(len(args))
+	for i := range args {
+		a := &args[i]
+		b.write(a)
+	}
 }
 
-func (b *Buffer) WriteArg(a Arg) {
-	b.writeArg(&a)
-}
-
-func (b *Buffer) writeArg(a *Arg) {
+// write appends an arg to the buffer
+// We can't use AppendRESP because numeric types need scratch buffer to append as bulk string
+func (b *Buffer) write(a *Arg) {
 	switch a.typ {
 	case typString, typKey:
 		b.B = appendBulkString(b.B, a.str)
@@ -84,20 +84,5 @@ func (b *Buffer) writeArg(a *Arg) {
 	default:
 		b.B = appendNullBulkString(b.B)
 	}
-}
 
-var bufferPool sync.Pool
-
-func BlankBuffer() *Buffer {
-	x := bufferPool.Get()
-	if x == nil {
-		return new(Buffer)
-	}
-	return x.(*Buffer)
-}
-
-// Close resets and returns a Buffer to the pool.
-func (b *Buffer) Close() {
-	b.Reset()
-	bufferPool.Put(b)
 }

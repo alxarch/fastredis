@@ -40,24 +40,42 @@ type Pool struct {
 	closeChan chan struct{}
 	ts        int64
 
-	stats PoolStats
+	hits, misses, timeouts int64
 }
 
-func NewPool(configURL string) (*Pool, error) {
-	pool := Pool{
-		Dial:              defaultDial,
-		CheckIdleInterval: 10 * time.Second,
-		// ReadBufferSize:    8192,
-		// ReadTimeout:       5 * time.Second,
-		// WriteTimeout:      5 * time.Second,
-		MaxConnections:   8,
-		MaxIdleTime:      time.Minute,
-		MaxConnectionAge: 10 * time.Minute,
+// Do executes a RESP pipeline
+func (pool *Pool) Do(p *Pipeline, r *resp.Reply) error {
+	conn, err := pool.Get(time.Time{})
+	if err != nil {
+		return err
 	}
-	if err := pool.ParseURL(configURL); err != nil {
-		return nil, err
+	err = conn.Do(p, r)
+	pool.Put(conn)
+	return err
+}
+
+// Close closes a pool
+func (pool *Pool) Close() error {
+	pool.mu.Lock()
+	if pool.closed {
+		pool.mu.Unlock()
+		return errPoolClosed
 	}
-	return &pool, nil
+	pool.closed = true
+	atomic.StoreInt32(&pool.numIdle, math.MinInt32)
+	atomic.StoreInt32(&pool.numOpen, math.MinInt32)
+	for i, c := range pool.idle {
+		pool.idle[i] = nil
+		c.closeWithError(errPoolClosed)
+	}
+	pool.idle = pool.idle[:0]
+	if ch := pool.closeChan; ch != nil {
+		pool.closeChan = nil
+		close(ch)
+	}
+	pool.cond.Broadcast()
+	pool.mu.Unlock()
+	return nil
 }
 
 // Get gets  a connection from the pool
@@ -89,6 +107,25 @@ func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
 	return pool.get(deadline.UnixNano())
 }
 
+// Put releases a connection to the pool
+func (pool *Pool) Put(c *Conn) {
+	if c == nil {
+		return
+	}
+
+	if c.err != nil {
+		pool.closeConn(c)
+		return
+	}
+	now := time.Now()
+	if pool.MaxConnectionAge > 0 && now.Sub(c.createdAt) > pool.MaxConnectionAge {
+		pool.closeConn(c)
+		return
+	}
+	c.lastUsedAt = now
+	pool.put(c)
+}
+
 func defaultDial(addr string) (net.Conn, error) {
 	return net.Dial("tcp", addr)
 }
@@ -97,13 +134,6 @@ type noCopy struct{}
 
 func (noCopy) Lock()   {}
 func (noCopy) Unlock() {}
-
-func (pool *Pool) Clean() (int, error) {
-	size := atomic.LoadInt32(&pool.numIdle)
-	scratch := make([]*Conn, size)
-	pool.clean(&scratch, time.Now())
-	return pool.clean(&scratch, time.Now())
-}
 
 func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
 	maxIdleTime := pool.MaxIdleTime
@@ -148,29 +178,6 @@ func (pool *Pool) clean(scratch *[]*Conn, now time.Time) (int, error) {
 	n := len(tmp)
 	*scratch = tmp[:0]
 	return n, nil
-}
-
-func (pool *Pool) Close() error {
-	pool.mu.Lock()
-	if pool.closed {
-		pool.mu.Unlock()
-		return errPoolClosed
-	}
-	pool.closed = true
-	atomic.StoreInt32(&pool.numIdle, math.MinInt32)
-	atomic.StoreInt32(&pool.numOpen, math.MinInt32)
-	for i, c := range pool.idle {
-		pool.idle[i] = nil
-		c.closeWithError(errPoolClosed)
-	}
-	pool.idle = pool.idle[:0]
-	if ch := pool.closeChan; ch != nil {
-		pool.closeChan = nil
-		close(ch)
-	}
-	pool.cond.Broadcast()
-	pool.mu.Unlock()
-	return nil
 }
 
 // const poolClockInterval = 100 * time.Millisecond
@@ -250,30 +257,10 @@ func (pool *Pool) closeConn(c *Conn) {
 	}
 }
 
-// Put releases a connection to the pool
-func (pool *Pool) Put(c *Conn) {
-	if c == nil {
-		return
-	}
-
-	if c.err != nil {
-		pool.closeConn(c)
-		return
-	}
-	now := time.Now()
-	if pool.MaxConnectionAge > 0 && now.Sub(c.createdAt) > pool.MaxConnectionAge {
-		pool.closeConn(c)
-		return
-	}
-	c.lastUsedAt = now
-	pool.put(c)
-}
-
 func (pool *Pool) put(c *Conn) {
-	// c.lastUsedAt = time.Now()
 	run := false
 	ts := c.lastUsedAt.UnixNano()
-	isNew := c.IsNew()
+	isNew := c.lastUsedAt.Equal(c.createdAt)
 	pool.mu.Lock()
 	if pool.closed {
 		pool.mu.Unlock()
@@ -313,7 +300,7 @@ func (pool *Pool) get(deadline int64) (conn *Conn, err error) {
 		}
 		if 0 < deadline && deadline < pool.ts {
 			pool.mu.Unlock()
-			atomic.AddUint32(&pool.stats.Timeouts, 1)
+			atomic.AddInt64(&pool.timeouts, 1)
 			err = errDeadlineExceeded
 			return
 		}
@@ -330,9 +317,9 @@ func (pool *Pool) get(deadline int64) (conn *Conn, err error) {
 	}
 	pool.mu.Unlock()
 	if miss {
-		atomic.AddUint32(&pool.stats.Misses, 1)
+		atomic.AddInt64(&pool.misses, 1)
 	} else {
-		atomic.AddUint32(&pool.stats.Hits, 1)
+		atomic.AddInt64(&pool.hits, 1)
 	}
 	return
 }
@@ -350,16 +337,6 @@ func (pool *Pool) maxConnections() int32 {
 		max = math.MaxInt32
 	}
 	return max
-}
-
-func (pool *Pool) Do(p *Pipeline, r *resp.Reply) error {
-	conn, err := pool.Get(time.Time{})
-	if err != nil {
-		return err
-	}
-	err = conn.Do(p, r)
-	pool.Put(conn)
-	return err
 }
 
 // ParseURL parses a URL to PoolOptions
@@ -423,8 +400,21 @@ func (pool *Pool) ParseURL(rawurl string) (err error) {
 	return
 }
 
+func (pool *Pool) Idle() int {
+	return int(atomic.LoadInt32(&pool.numIdle))
+}
+func (pool *Pool) Open() int {
+	return int(atomic.LoadInt32(&pool.numOpen))
+}
+
 type PoolStats struct {
-	Hits     uint32
-	Misses   uint32
-	Timeouts uint32
+	Hits, Misses, Timeouts int64
+}
+
+func (pool *Pool) Stats() PoolStats {
+	return PoolStats{
+		Hits:     atomic.LoadInt64(&pool.hits),
+		Misses:   atomic.LoadInt64(&pool.misses),
+		Timeouts: atomic.LoadInt64(&pool.timeouts),
+	}
 }

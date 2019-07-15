@@ -18,17 +18,8 @@ func Test_Pool(t *testing.T) {
 	}
 	defer pool.Put(conn)
 	p := BlankPipeline()
-	defer p.Close()
+	defer ReleasePipeline(p)
 	p.HSet("foo", "bar", resp.String("baz"))
 	conn.Do(p, nil)
 
 }
-
-// func Test_ParseURL(t *testing.T) {
-// 	opts, err := ParseURL("")
-// 	if err != nil {
-// 		t.Fatalf("Unexpected error %s", err)
-// 	}
-// 	_ = opts
-
-// }

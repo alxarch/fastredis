@@ -24,7 +24,7 @@ func Test_Scan(t *testing.T) {
 	}
 	iter := HScan(key, "", 0)
 	values := make(map[string]string)
-	scan := func(v resp.Value, k []byte) error {
+	scan := func(k []byte, v resp.Value) error {
 		values[string(k)] = string(v.Bytes())
 		return nil
 	}

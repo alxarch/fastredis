@@ -23,9 +23,9 @@ func TestReplyReadFrom(t *testing.T) {
 func TestReplyReadFromN(t *testing.T) {
 	rep := new(Reply)
 	b := new(Buffer)
-	b.WriteBulkString("foo")
-	b.WriteBulkString("bar")
-	b.WriteBulkString("baz")
+	b.BulkString("foo")
+	b.BulkString("bar")
+	b.BulkString("baz")
 	r := bufio.NewReader(bytes.NewReader(b.B))
 	v, err := rep.ReadFromN(r, 3)
 	if err != nil {
@@ -51,7 +51,7 @@ func TestReplyReadFromN(t *testing.T) {
 
 func TestParseValue(t *testing.T) {
 	b := new(Buffer)
-	b.WriteBulkStrings("foo", "bar", "answer", "42")
+	b.BulkStringArray("foo", "bar", "answer", "42")
 	v, err := ParseValue(b.B)
 	if err != nil {
 		t.Errorf("Parse failed %s", err)
