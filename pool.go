@@ -28,6 +28,7 @@ type Pool struct {
 	MaxIdleTime       time.Duration
 	MaxConnectionAge  time.Duration
 	CheckIdleInterval time.Duration
+	DB                int
 	Dial              func(address string, timeout time.Duration) (net.Conn, error)
 
 	numOpen int32
@@ -221,6 +222,7 @@ func (pool *Pool) newConn(conn net.Conn) (c *Conn) {
 	c.conn = conn
 	c.createdAt = now
 	c.lastUsedAt = now
+	c.Select(int64(pool.DB))
 	return
 }
 
@@ -336,6 +338,7 @@ func (pool *Pool) get(deadline int64) (conn *Conn, err error) {
 		pool.idle = pool.idle[:n]
 	}
 	pool.mu.Unlock()
+	conn.Select(int64(pool.DB))
 	if miss {
 		atomic.AddInt64(&pool.misses, 1)
 	} else {
@@ -372,12 +375,15 @@ func (pool *Pool) ParseURL(rawurl string) (err error) {
 		err = fmt.Errorf(`Invalid URL scheme %q`, u.Scheme)
 		return
 	}
-	switch n := strings.Trim(u.Path, "/"); n {
-	case "", "0":
-	default:
-		err = fmt.Errorf(`Invalid URL path %q`, u.Path)
-		return
+
+	if path := strings.Trim(u.Path, "/"); path != "" {
+		n, err := strconv.ParseInt(path, 10, 32)
+		if err != nil || n < 0 {
+			return fmt.Errorf(`Invalid URL path %q`, u.Path)
+		}
+		pool.DB = int(n)
 	}
+
 	q := u.Query()
 	host, port := u.Hostname(), u.Port()
 	if port == "" {
