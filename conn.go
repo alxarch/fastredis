@@ -267,6 +267,7 @@ func (c *Conn) Auth(password string) error {
 
 // Quit closes the connection issuing a QUIT command
 func (c *Conn) Quit() error {
+	defer c.Close()
 	p := BlankPipeline()
 	defer ReleasePipeline(p)
 	p.Quit()
