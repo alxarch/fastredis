@@ -14,13 +14,9 @@ import (
 func Test_Pool(t *testing.T) {
 	pool := new(Pool)
 	defer pool.Close()
-	// if err := pool.ParseURL("redis://:6379"); err != nil {
-	if err := pool.ParseURL("redis://"); err != nil {
+	if err := pool.ParseURL("redis://:6379/1?wait-timeout=1s&max-connections=5&max-idle-time=1s"); err != nil {
 		t.Fatalf("Unexpected error: %s", err)
 	}
-	pool.WaitTimeout = time.Second
-	pool.MaxConnections = 5
-	pool.MaxIdleTime = time.Second
 	now := time.Now()
 	key := fmt.Sprintf("mdbredis:%d", now.UnixNano())
 	wg := new(sync.WaitGroup)
@@ -29,6 +25,9 @@ func Test_Pool(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			p := pool.Pipeline()
+			if p.offset != 1 {
+				t.Errorf("Invalid pipeline offset: %s", p.B)
+			}
 			defer ReleasePipeline(p)
 			field := fmt.Sprintf("foo-%d", i)
 			p.HSet(key, field, resp.String("baz"))

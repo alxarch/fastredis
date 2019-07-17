@@ -123,7 +123,7 @@ func (s *ScanIterator) Next(conn *Conn) resp.Value {
 			reply.Reset()
 		}
 
-		p := BlankPipeline(-1)
+		p := BlankPipeline(conn.db)
 		switch s.cmd {
 		case "HSCAN":
 			p.HScan(s.key, s.cur, s.match, s.count)
