@@ -11,7 +11,7 @@ func TestConn(t *testing.T) {
 	if err != nil {
 		t.Fatalf(`Dial nil failed: %s`, err)
 	}
-	p := BlankPipeline()
+	p := BlankPipeline(3)
 	defer ReleasePipeline(p)
 	r := BlankReply()
 	defer ReleaseReply(r)
@@ -19,7 +19,7 @@ func TestConn(t *testing.T) {
 	p.Set("foo", resp.String("bar"), 0)
 	p.Keys("*")
 	p.FlushDB()
-	conn.Select(3)
+	conn.Select(2)
 	if err := conn.Do(p, r); err != nil {
 		t.Fatalf(`Do failed: %s`, err)
 	}
@@ -47,7 +47,7 @@ func TestConn(t *testing.T) {
 
 func BenchmarkPipeline(b *testing.B) {
 	b.ReportAllocs()
-	p := BlankPipeline()
+	p := BlankPipeline(0)
 	defer ReleasePipeline(p)
 	for i := 0; i < b.N; i++ {
 		p.Reset()

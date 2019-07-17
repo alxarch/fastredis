@@ -110,6 +110,14 @@ btoi:
 	return n, nil
 }
 
+// DiscardN discards n values from a reader
+func DiscardN(r *bufio.Reader, n int64) (err error) {
+	for ; n > 0 && err == nil; n-- {
+		err = Discard(r)
+	}
+	return
+}
+
 // Discard discards a value from a reader
 func Discard(r *bufio.Reader) error {
 	c, err := r.ReadByte()

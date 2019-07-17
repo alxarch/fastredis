@@ -27,10 +27,8 @@ type ConnOptions struct {
 	ReadTimeout    time.Duration
 	WriteTimeout   time.Duration
 	WriteOnly      bool
-	// SelectDB       int
 	// MaxRetries     int
 	// RetryBackoff   time.Duration
-	// KeyPrefix   string
 }
 
 // Dial opens a connection to a redis server
@@ -87,38 +85,31 @@ func (c *Conn) Do(pipeline *Pipeline, reply *resp.Reply) (err error) {
 	if c.err != nil {
 		return c.err
 	}
-	var offset int64
-	if db := c.db; db >= 0 {
-		c.db = -1
-		offset++
-		// Prepend SELECT command to the pipeline
-		bb := pipeline.B
-		pipeline.B = make([]byte, 0, len(bb)+64)
-		pipeline.Select(db)
-		pipeline.B = append(pipeline.B, bb...)
-	}
 	n := int64(pipeline.Len())
 	if n <= 0 {
 		return nil
 	}
 	_, err = c.Write(pipeline.B)
 	if err == nil {
+		discard := int64(pipeline.offset)
 		if reply == nil {
-			if !c.options.WriteOnly {
-				for ; n > 0 && err == nil; n-- {
-					err = resp.Discard(c.r)
-				}
+			if c.options.WriteOnly {
+				// WriteOnly connection no error
+				return nil
 			}
+			discard += n
+			n = 0
 		} else if c.options.WriteOnly {
+			// WriteOnly connection cannot read reply
 			return errConnWriteOnly
-		} else {
-			n -= offset
-			for ; offset > 0 && err == nil; offset-- {
-				err = resp.Discard(c.r)
-			}
-			if err == nil {
+		}
+		if discard > 0 {
+			err = resp.DiscardN(c.r, discard)
+			if err == nil && n > 0 {
 				_, err = reply.ReadFromN(c.r, n)
 			}
+		} else if n > 0 {
+			_, err = reply.ReadFromN(c.r, n)
 		}
 	}
 	if err != nil {
@@ -129,7 +120,7 @@ func (c *Conn) Do(pipeline *Pipeline, reply *resp.Reply) (err error) {
 
 // PopPush executes the blocking BRPOPLPUSH command
 func (c *Conn) PopPush(src, dst string, timeout time.Duration) (string, error) {
-	p := BlankPipeline()
+	p := BlankPipeline(c.db)
 	defer ReleasePipeline(p)
 	p.BRPopLPush(src, dst, timeout)
 	rep := BlankReply()
@@ -146,7 +137,7 @@ func (c *Conn) PopPush(src, dst string, timeout time.Duration) (string, error) {
 }
 
 func (c *Conn) bpop(cmd string, timeout time.Duration, key string, keys []string) (k, v string, score float64, err error) {
-	p := BlankPipeline()
+	p := BlankPipeline(c.db)
 	defer ReleasePipeline(p)
 	p.Command(cmd, len(keys)+2)
 	p.Arg(resp.Key(key))
@@ -267,7 +258,7 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 
 // Auth authenticates a connection to the server
 func (c *Conn) Auth(password string) error {
-	p := BlankPipeline()
+	p := BlankPipeline(-1)
 	defer ReleasePipeline(p)
 	p.Auth(password)
 	r := BlankReply()
@@ -290,7 +281,7 @@ func (c *Conn) Select(db int64) {
 // Quit closes the connection issuing a QUIT command
 func (c *Conn) Quit() error {
 	defer c.Close()
-	p := BlankPipeline()
+	p := BlankPipeline(-1)
 	defer ReleasePipeline(p)
 	p.Quit()
 	return c.Do(p, nil)
@@ -298,7 +289,7 @@ func (c *Conn) Quit() error {
 
 // LoadScript loads a Lua script
 func (c *Conn) LoadScript(src string) (sha1 string, err error) {
-	p := BlankPipeline()
+	p := BlankPipeline(-1)
 	defer ReleasePipeline(p)
 	r := BlankReply()
 	defer ReleaseReply(r)

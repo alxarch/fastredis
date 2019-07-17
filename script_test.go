@@ -19,7 +19,7 @@ func TestScript(t *testing.T) {
 	if s != `da95252e2c27e41cd53b9114f28b4ba84e7d64d4` {
 		t.Errorf("Invalid SHA1: %s", s)
 	}
-	p := BlankPipeline()
+	p := BlankPipeline(10)
 	defer ReleasePipeline(p)
 	r := BlankReply()
 	defer ReleaseReply(r)

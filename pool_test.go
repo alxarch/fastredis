@@ -28,7 +28,7 @@ func Test_Pool(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			p := BlankPipeline()
+			p := pool.Pipeline()
 			defer ReleasePipeline(p)
 			field := fmt.Sprintf("foo-%d", i)
 			p.HSet(key, field, resp.String("baz"))
@@ -40,7 +40,7 @@ func Test_Pool(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	p := BlankPipeline()
+	p := pool.Pipeline()
 	defer ReleasePipeline(p)
 	p.HGetAll(key)
 	r := BlankReply()

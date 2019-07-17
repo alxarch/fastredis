@@ -9,18 +9,20 @@ import (
 // Pipeline is a command buffer
 type Pipeline struct {
 	resp.Buffer
-	n int
+	offset int
+	n      int
 }
 
 // Reset resets a pipeline
 func (p *Pipeline) Reset() {
 	p.Buffer.Reset()
 	p.n = 0
+	p.offset = 0
 }
 
 // Len returns the number of commands in a pipeline
 func (p *Pipeline) Len() int {
-	return p.n
+	return p.n - p.offset
 }
 
 // Size returns the size of the pipeline in bytes
@@ -43,12 +45,19 @@ func (p *Pipeline) Command(cmd string, numArgs int) {
 var pipelinePool sync.Pool
 
 // BlankPipeline gets a blank pipeline from the pool
-func BlankPipeline() *Pipeline {
+func BlankPipeline(db int64) (p *Pipeline) {
 	x := pipelinePool.Get()
 	if x == nil {
-		return new(Pipeline)
+		p = new(Pipeline)
+	} else {
+		p = x.(*Pipeline)
 	}
-	return x.(*Pipeline)
+	if db > 0 {
+		p.Select(db)
+		p.offset++
+	}
+	return p
+
 }
 
 // ReleasePipeline resets and returns the pipeline to the pool

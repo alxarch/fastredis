@@ -226,6 +226,11 @@ func (pool *Pool) newConn(conn net.Conn) (c *Conn) {
 	return
 }
 
+// Pipeline gets a blank pipeline from the pool setting the correct DB
+func (pool *Pool) Pipeline() *Pipeline {
+	return BlankPipeline(int64(pool.DB))
+}
+
 func (pool *Pool) dial() (*Conn, error) {
 	dialer := pool.Dial
 	if dialer == nil {
