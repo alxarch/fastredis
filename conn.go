@@ -13,6 +13,7 @@ import (
 // Conn is a connectio to a Redis server
 type Conn struct {
 	conn       net.Conn
+	db         int64
 	r          *bufio.Reader
 	err        error
 	lastUsedAt time.Time
@@ -86,6 +87,16 @@ func (c *Conn) Do(pipeline *Pipeline, reply *resp.Reply) (err error) {
 	if c.err != nil {
 		return c.err
 	}
+	var offset int64
+	if db := c.db; db >= 0 {
+		c.db = -1
+		offset++
+		// Prepend SELECT command to the pipeline
+		bb := pipeline.B
+		pipeline.B = make([]byte, 0, len(bb)+64)
+		pipeline.Select(db)
+		pipeline.B = append(pipeline.B, bb...)
+	}
 	n := int64(pipeline.Len())
 	if n <= 0 {
 		return nil
@@ -101,7 +112,13 @@ func (c *Conn) Do(pipeline *Pipeline, reply *resp.Reply) (err error) {
 		} else if c.options.WriteOnly {
 			return errConnWriteOnly
 		} else {
-			_, err = reply.ReadFromN(c.r, n)
+			n -= offset
+			for ; offset > 0 && err == nil; offset-- {
+				err = resp.Discard(c.r)
+			}
+			if err == nil {
+				_, err = reply.ReadFromN(c.r, n)
+			}
 		}
 	}
 	if err != nil {
@@ -263,6 +280,11 @@ func (c *Conn) Auth(password string) error {
 		return err
 	}
 	return nil
+}
+
+// Select will select db on next Do
+func (c *Conn) Select(db int64) {
+	c.db = db
 }
 
 // Quit closes the connection issuing a QUIT command

@@ -19,6 +19,7 @@ func TestConn(t *testing.T) {
 	p.Set("foo", resp.String("bar"), 0)
 	p.Keys("*")
 	p.FlushDB()
+	conn.Select(3)
 	if err := conn.Do(p, r); err != nil {
 		t.Fatalf(`Do failed: %s`, err)
 	}
