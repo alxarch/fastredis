@@ -22,12 +22,13 @@ type Pool struct {
 	ReadBufferSize    int
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
+	WaitTimeout       time.Duration
 	Address           string
 	MaxConnections    int
 	MaxIdleTime       time.Duration
 	MaxConnectionAge  time.Duration
 	CheckIdleInterval time.Duration
-	Dial              func(address string) (net.Conn, error)
+	Dial              func(address string, timeout time.Duration) (net.Conn, error)
 
 	numOpen int32
 	numIdle int32
@@ -45,7 +46,7 @@ type Pool struct {
 
 // Do executes a RESP pipeline
 func (pool *Pool) Do(p *Pipeline, r *resp.Reply) error {
-	conn, err := pool.Get(time.Time{})
+	conn, err := pool.Get()
 	if err != nil {
 		return err
 	}
@@ -78,11 +79,20 @@ func (pool *Pool) Close() error {
 	return nil
 }
 
+func (pool *Pool) Deadline() time.Time {
+	if pool.WaitTimeout > 0 {
+		return time.Now().Add(pool.WaitTimeout)
+	}
+	return time.Now().Add(time.Minute)
+}
+
 // Get gets  a connection from the pool
-func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
+func (pool *Pool) Get() (*Conn, error) {
+
 	for {
 		if n := atomic.LoadInt32(&pool.numIdle); n > 0 {
 			if atomic.CompareAndSwapInt32(&pool.numIdle, n, n-1) {
+				deadline := pool.Deadline()
 				return pool.get(deadline.UnixNano())
 			}
 		} else if n < 0 {
@@ -95,8 +105,11 @@ func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
 	for {
 		if n := atomic.LoadInt32(&pool.numOpen); 0 <= n && n < max {
 			if atomic.CompareAndSwapInt32(&pool.numOpen, n, n+1) {
-				go pool.dial(pool.Address)
-				break
+				conn, err := pool.dial()
+				if err != nil {
+					return nil, err
+				}
+				return conn, nil
 			}
 		} else if n < 0 {
 			return nil, errPoolClosed
@@ -104,6 +117,7 @@ func (pool *Pool) Get(deadline time.Time) (*Conn, error) {
 			break
 		}
 	}
+	deadline := pool.Deadline()
 	return pool.get(deadline.UnixNano())
 }
 
@@ -126,8 +140,11 @@ func (pool *Pool) Put(c *Conn) {
 	pool.put(c)
 }
 
-func defaultDial(addr string) (net.Conn, error) {
-	return net.Dial("tcp", addr)
+func defaultDial(addr string, timeout time.Duration) (net.Conn, error) {
+	if addr == "" {
+		addr = ":6379"
+	}
+	return net.DialTimeout("tcp", addr, timeout)
 }
 
 type noCopy struct{}
@@ -207,17 +224,17 @@ func (pool *Pool) newConn(conn net.Conn) (c *Conn) {
 	return
 }
 
-func (pool *Pool) dial(addr string) {
+func (pool *Pool) dial() (*Conn, error) {
 	dialer := pool.Dial
 	if dialer == nil {
 		dialer = defaultDial
 	}
-	conn, err := dialer(addr)
+	conn, err := dialer(pool.Address, pool.WaitTimeout)
 	if err != nil {
 		atomic.AddInt32(&pool.numOpen, -1)
-		return
+		return nil, err
 	}
-	pool.put(pool.newConn(conn))
+	return pool.newConn(conn), nil
 }
 
 func (pool *Pool) runCleaner() {
@@ -243,6 +260,9 @@ func (pool *Pool) runCleaner() {
 var connPool sync.Pool
 
 func (pool *Pool) closeConn(c *Conn) {
+	if c == nil {
+		return
+	}
 	conn := c.conn
 	c.conn = nil
 	conn.Close()
@@ -373,6 +393,11 @@ func (pool *Pool) ParseURL(rawurl string) (err error) {
 	if v, ok := q["write-timeout"]; ok && len(v) > 0 {
 		if d, _ := time.ParseDuration(v[0]); d > 0 {
 			pool.WriteTimeout = d
+		}
+	}
+	if v, ok := q["wait-timeout"]; ok && len(v) > 0 {
+		if d, _ := time.ParseDuration(v[0]); d > 0 {
+			pool.WaitTimeout = d
 		}
 	}
 	if v, ok := q["read-buffer-size"]; ok && len(v) > 0 {
