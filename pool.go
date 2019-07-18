@@ -270,12 +270,13 @@ func (pool *Pool) closeConn(c *Conn) {
 	if c == nil {
 		return
 	}
-	conn := c.conn
-	c.conn = nil
-	conn.Close()
-	c.r.Reset(nil)
-	c.err = nil
-	connPool.Put(c)
+	if conn := c.conn; conn != nil {
+		conn.Close()
+		c.conn = nil
+		c.r.Reset(nil)
+		c.err = nil
+		connPool.Put(c)
+	}
 	for {
 		n := atomic.LoadInt32(&pool.numOpen)
 		if n <= 0 || atomic.CompareAndSwapInt32(&pool.numOpen, n, n-1) {
