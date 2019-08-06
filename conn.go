@@ -118,6 +118,22 @@ func (c *Conn) Do(pipeline *Pipeline, reply *resp.Reply) (err error) {
 	return
 }
 
+// Ping performs a PING to the server
+func (c *Conn) Ping() error {
+	p := BlankPipeline(0)
+	defer ReleasePipeline(p)
+	rep := BlankReply()
+	defer ReleaseReply(rep)
+	if err := c.Do(p, rep); err != nil {
+		return err
+	}
+	pong := rep.Value().Get(0).Bytes()
+	if string(pong) != "PONG" {
+		return Err("Invalid PING reply")
+	}
+	return nil
+}
+
 // PopPush executes the blocking BRPOPLPUSH command
 func (c *Conn) PopPush(src, dst string, timeout time.Duration) (string, error) {
 	p := BlankPipeline(c.db)
